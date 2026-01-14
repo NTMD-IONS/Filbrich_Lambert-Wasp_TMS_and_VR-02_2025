@@ -1,0 +1,36 @@
+#### Informative notes/explanations to complete this document (Markdown documents flavored for GitHub) - DO NOT EDIT THIS SECTION PLEASE
+
+In order to put text in bold, it must be placed between **two asterisks**,
+for italic *one asterisk*
+To insert an image, you will have to follow the syntax shown below  :
+
+      ![Description of the image](link to the image) 
+
+
+Exemple:   ![Here is a brain image.](https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwww.genengnews.com%2Fwp-content%2Fuploads%2F2023%2F08%2FGettyImages-1421511892.jpg&f=1&nofb=1&ipt=a8b37f225612d31c8fbd242af03e7d3b8f8945a611e5ecf78cd4dc0d74a5302b&ipo=images) 
+
+
+Hereafter you have an exemple on how to insert a note, (the whithespace before starting the text important!):
+     I'm not writting a note here.
+
+     While now it is the correct syntax and it will be represented then as a note within a grey rectangle. 
+
+
+=======================START COMPLETING BELOW========================
+# Inquiry information
+- Experiment title: TMS-VR
+- Author(s): Lieve Filbrich (UCLouvain & KULeuven), Julien Lambert (UCLouvain), José Biurrun Manresa (Universidad Nacional de Entre Rios, Argentina), Facundo Schneider (Universidad Nacional de Entre Rios, Argentina)
+- Principle Investigator: Lieve Filbrich
+- Affiliation: IoNS, COSY
+- Date of inquiry:20.02.2025
+- Copyright (if applicable): 
+
+
+# Objective
+I'm preparing an experiment that combines sensitization of nociceptive pathways, single-pulse TMS and presentation of visual stimuli in VR. I aim to test wether threatening visual stimuli that approach 
+the sensitized limb have an impact on corticospinal excitability as measured with motor evoked potentials. I also plan to measure RT to the visual stimuli. 
+
+# What CATL can do for you?
+The virtual environment has been programmed by the collaborators from Argentina. I will mostly need help in setting up the VR equipement and make it compatible with the neuronavigation system in the TMS lab 
+as well in verifying the timing of the triggers that are sent to the TMS and an electrical stimulation device. If an additional script to the one running in the VR application is needed I would also need help for that. 
+ 
