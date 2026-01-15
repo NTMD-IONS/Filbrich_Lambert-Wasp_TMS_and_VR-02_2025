@@ -1,92 +1,137 @@
+% 
+% 
+% decide on folder and subject level naming of the acquisitions
+% sub-00$
+% 
+% 
+% (sub-001 is test_giulia)
+% 
+% % Cédric Lenoir, NeTMeD, IoNS, UCLouvain, January 2026
+% 
 %% 1) LOAD DATA AND SET A FEW PARAMETERS
-% channelEMG = [1 2];
-% channelACC = [4 5]; % 4 -> Y; 5 -> Z; (3 -> X)
 
-% load data from displayed list of .mat files contained in data folder
-OS = ispc;
-if true(OS) % PC
-    dataPath = '.\data';
-    savePath = '.\results';
-else % mac
-    dataPath = './data';
-    savePath = './results';
+% set the paths and initialize letswave
+% Select the general data folder, results folder to save HRV metrics
+data_folder = uigetdir('C:\','Select data folder');
+results_folder = fullfile(data_folder,'results');
+if ~isfolder(results_folder)
+    mkdir(results_folder);
+else
 end
-file_list = dir(fullfile(dataPath,'*.mat*'));
-clc
-for ifile = 1:size(file_list,1)
-    disp(strcat(['#',num2str(ifile),' ',file_list(ifile).name]))
-    disp(' ')
+addpath(genpath(data_folder))
+
+% initialize letswave 6
+% check if lw is already on the path
+if contains(path, 'C:\Users\cedlenoir\Documents\MATLAB\letswave6-master')
+    letswave();
+    clc
+else
+    lw_path = uigetdir('C:\Users\cedlenoir\Documents\MATLAB','Select Letswave 6 folder');
+    addpath(genpath(lw_path))
+    letswave();
+    clc
 end
 
 % dialog box
-prompt = {'\fontsize{15} Subject ID? :','\fontsize{15} which file number #? : ','\fontsize{15} Condition? : PRE -> 1 OR POST -> 2',...
-    '\fontsize{15} Hand side? : left -> 1 OR right -> 2','\fontsize{15} EMG trial plots? : YES -> 1 OR NO -> 0','\fontsize{15} ACCELERO trial plots? : YES -> 1 OR NO -> 0'};
-dlgtitle = 'LOAD DATA';
+prompt = {'\fontsize{15} Subject ID? :','\fontsize{15} TMS start index? : ','\fontsize{15} TMS stop index? : ',...
+    '\fontsize{15} Sensitized arm (L/R): ','\fontsize{15} Stimulated hemisphere (L/R):',...
+    '\fontsize{15} EMG trial plots? : YES -> 1 OR NO -> 0','\fontsize{15} Comments: ',};
+dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
-dims = repmat([1 60],6,1);
-definput = {'000','','','2','0','0'};
+dims = repmat([1 80],7,1);
+definput = {'000','','','','','1',''};
 info = inputdlg(prompt,dlgtitle,dims,definput,opts);
 subject_id = char(info(1));
-chosen_file = str2double(info(2));
-cond = str2double(info(3));
-if cond == 1
-    condition = 'PRE';
-elseif cond == 2
-    condition = 'PST';
-end
-hand_side = str2double(info(4));
-if hand_side == 1
-    tested_hand = 'left';
-elseif hand_side == 2
-    tested_hand = 'right';
-end
-plot_opt_EMG = str2double(info(5));
-plot_opt_ACC = str2double(info(6));
-filename = file_list(chosen_file).name(1:end-4);
-savename = strcat('sub-',subject_id,'-',condition,'-',tested_hand,'-hand_',filename);
+tms_idx_start = str2double(info(2));
+tms_idx_stop = str2double(info(3));
+sensi_arm = char(info(4));
+stim_hemi = char(info(5));
+plot_opt_EMG = str2double(info(6));
+notes = char(info(7));
 
-% store data in structure "data"
-try
-    datastruct = load(file_list(chosen_file).name);
-    storedvars = fieldnames(datastruct) ;
-    FirstVarName = storedvars{2};
-    data = datastruct.(FirstVarName);
-    clc
-    disp(strcat(['file loaded : ',file_list(chosen_file).name]))
-catch
-    disp('wave data not found!')
-end
+% store info in structure
+sub_info = struct;
+sub_info.sub_ID = subject_id;
+sub_info.sensitized_arm = sensi_arm;
+sub_info.stimulated_hemisph = stim_hemi;
+sub_info.TMS_triggers = [tms_idx_start tms_idx_stop];
+sub_info.comments = notes;
 
-% extract numbers of trials and channels
-trials = double(data.frames);
+% folder name of Visor EMG data
+subject_folder = fullfile(data_folder,strcat('sub-',subject_id),'Sessions');
 
-% design bandpass filter Butterworth 20-450 Hz; order 4
-filtOrder = 4;
+% list sessions
+session_list = dir(subject_folder);
+session_folder = session_list(~ismember({session_list.name}, {'.', '..'}));
+
+% list EMG CNT files
+file_list = dir(fullfile(session_folder.folder,session_folder.name,'*emg.cnt*'));
+
+[header, data] = CLW_load(fullfile(session_folder.folder,session_folder.name,file_list.name));
+sr = 1/header.xstep;
+
+filename = file_list.name(1:end-8);
+savename = strcat('sub-',subject_id,'_',filename);
+
+% pre-processign steps in lw
+% high pass filter Butterworth 20-450 Hz; order 4
 low_cutoff = 20;
-high_cutoff = 450;
-% sampling rate
-sr = 2000;
-fnyquist = sr/2;
+order = 4;
+[filt_header, filt_data] = RLW_butterworth_filter(header,data,'filter_type','highpass','low_cutoff',low_cutoff,'filter_order',order);
+filt_header.name = strcat([savename,' HPfilt']);
 
-% bandpass-filter the EMG data
-[b,a] = butter(filtOrder,[low_cutoff,high_cutoff]./fnyquist,'bandpass');
-data.emg_filt = filtfilt(b,a,data.values(:,1:2,:));
+% segmentation
+xstart = -0.2;
+xduration = 0.7;
+[seg_header, seg_data] = RLW_segmentation(filt_header, filt_data, {'1'},'x_start',xstart,'x_duration',xduration);
+seg_header.name = strcat([filt_header.name,' ep']);
+seg_header.chanlocs.labels = 'EMG1';
+% keep TMS events after rMT
+seg_data = seg_data(tms_idx_start:tms_idx_stop,1,1,1,1,:);
+seg_header.datasize = [tms_idx_stop-tms_idx_start+1,1,1,1,1,round(xduration*sr)];
 
-% store acc data
-data.acc = data.values(:,4:5,:);
+% save lw dataset
+CLW_save(fullfile(session_folder.folder,session_folder.name),seg_header, seg_data);
 
-% define baseline window as the first 400 ms of the frame
-baselineWind = 0.4;
-% trigger position is the middle of the frame in Signal
-trigger_idx = 0.5*sr;
-% define response time window for ACCELERO, from trigger index  to +200 ms
-responseACCWind = [trigger_idx trigger_idx+0.2*sr];
-% define response time window for EMG, from trigger index  to +200 ms
-responseEMGWind = [trigger_idx trigger_idx+0.04*sr];
-% define MEP peak-to-peak amplitude criterion >50 uV
-emg_threshold = 0.05;
+% define baseline window to check for baseline activity
+bsln_time_window = [-0.2 0];
+bsln_sample_window = [1 round(0.2*sr+1)];
 
-pause(0.1)
+% exclude MEP + warning if baseline noise RMS > +/- 3*SD, until no outliers
+mep_data = squeeze(seg_data);
+idx = 1;
+idx_exclud = [];
+for itrial = 1:tms_idx_stop-tms_idx_start+1
+    bsln_rms(itrial,1) = rms(mep_data(itrial,bsln_sample_window(1):bsln_sample_window(2)));
+    bsln_std(itrial,1) = std(mep_data(itrial,bsln_sample_window(1):bsln_sample_window(2)));
+    if bsln_rms(itrial,1) > dev_std(itrial,1)*3
+        idx_exclud(idx,1) = itrial;
+        idx = idx+1;
+    else
+    end
+end
+if isempty(idx_exclud)
+    disp(strcat([num2str(0),' MEPs excluded']))
+else
+    disp(strcat([num2str(idx-1),' MEPs excluded']))
+end
+% exclude MEP + warning if baseline noise max amplitude > 15 µV
+
+% plot MEP and criteria
+f = figure('Color','w','Position',[500 500 800 800]);
+xline(0,'TMS')
+
+
+% define response time window for EMG, from trigger index to +200 ms
+% responseEMGWind = [trigger_idx trigger_idx+0.04*sr];
+
+% define MEP peak-to-peak amplitude criterion > 50 µV
+emg_threshold = 50;
+
+
+
+% squeeeze data and send it in workspace
+
 
 %% 2) PREPROCESS EMG DATA
 
