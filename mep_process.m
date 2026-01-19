@@ -11,17 +11,22 @@
 %% 1) LOAD DATA AND SET A FEW PARAMETERS
 
 % set the paths and initialize letswave
-% Select the general data folder, results folder to save HRV metrics
+% Select the general data folder which contains all subjects folders
 data_folder = uigetdir('C:\','Select data folder');
 results_folder = fullfile(data_folder,'results');
+pre_proc_folder = fullfile(data_folder,'pre-processed');
 if ~isfolder(results_folder)
     mkdir(results_folder);
+else
+end
+if ~isfolder(pre_proc_folder)
+    mkdir(pre_proc_folder);
 else
 end
 addpath(genpath(data_folder))
 
 % initialize letswave 6
-% check if lw is already on the path
+% check if lw is already on the path if not select the folder of the toolobx
 if contains(path, 'C:\Users\cedlenoir\Documents\MATLAB\letswave6-master')
     letswave();
     clc
@@ -33,28 +38,35 @@ else
 end
 
 % dialog box
-prompt = {'\fontsize{15} Subject ID? :','\fontsize{15} TMS start index? : ','\fontsize{15} TMS stop index? : ',...
-    '\fontsize{15} Sensitized arm (L/R): ','\fontsize{15} Stimulated hemisphere (L/R):',...
-    '\fontsize{15} EMG trial plots? : YES -> 1 OR NO -> 0','\fontsize{15} Comments: ',};
+prompt = {'\fontsize{12} Subject ID? :','\fontsize{12} Sensitized arm (L/R): ','\fontsize{12} Stimulated hemisphere (L/R):',...
+    '\fontsize{12} TMS PRE-CAPS start index? : ','\fontsize{12} TMS PRE-CAPS stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
+    '\fontsize{12} EMG trial plots? : YES -> 1 OR NO -> 0','\fontsize{12} Comments: ',};
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
-dims = repmat([1 80],7,1);
-definput = {'000','','','','','1',''};
+dims = repmat([1 80],15,1);
+definput = {'002','R','L','114','137','138','164','165','192','193','220','221','246','1',''};
 info = inputdlg(prompt,dlgtitle,dims,definput,opts);
 subject_id = char(info(1));
-tms_idx_start = str2double(info(2));
-tms_idx_stop = str2double(info(3));
-sensi_arm = char(info(4));
-stim_hemi = char(info(5));
-plot_opt_EMG = str2double(info(6));
-notes = char(info(7));
+sensi_arm = char(info(2));
+stim_hemi = char(info(3));
+ixd_tms_pre_start = str2double(info(4));
+ixd_tms_pre_stop = str2double(info(5));
+ixd_tms_pst_start = str2double([info(6) info(8) info(10) info(12)]);
+ixd_tms_pst_stop = str2double([info(7) info(9) info(11) info(13)]);
+plot_opt_EMG = str2double(info(14));
+notes = str2double(info(15));
 
 % store info in structure
 sub_info = struct;
 sub_info.sub_ID = subject_id;
 sub_info.sensitized_arm = sensi_arm;
 sub_info.stimulated_hemisph = stim_hemi;
-sub_info.TMS_triggers = [tms_idx_start tms_idx_stop];
+sub_info.TMS_triggers.pre = [ixd_tms_pre_start;ixd_tms_pre_stop];
+sub_info.TMS_triggers.pst = [ixd_tms_pst_start;ixd_tms_pst_stop];
 sub_info.comments = notes;
 
 % folder name of Visor EMG data
@@ -67,15 +79,19 @@ session_folder = session_list(~ismember({session_list.name}, {'.', '..'}));
 % list EMG CNT files
 file_list = dir(fullfile(session_folder.folder,session_folder.name,'*emg.cnt*'));
 
-[header, data] = CLW_load(fullfile(session_folder.folder,session_folder.name,file_list.name));
-sr = 1/header.xstep;
-
+% import CNT file
+[out_data,~] = RLW_import_CNT(fullfile(session_folder.folder,session_folder.name,file_list.name));
 filename = file_list.name(1:end-8);
 savename = strcat('sub-',subject_id,'_',filename);
+out_data.header.name = savename;
+CLW_save(pre_proc_folder,out_data.header,out_data.data)
+clear out_data
+[header, data] = CLW_load(fullfile(pre_proc_folder,savename));
+sr = 1/header.xstep;
 
 % pre-processign steps in lw
-% high pass filter Butterworth 20-450 Hz; order 4
-low_cutoff = 20;
+% high pass filter Butterworth 4 Hz; order 4
+low_cutoff = 4;
 order = 4;
 [filt_header, filt_data] = RLW_butterworth_filter(header,data,'filter_type','highpass','low_cutoff',low_cutoff,'filter_order',order);
 filt_header.name = strcat([savename,' HPfilt']);
