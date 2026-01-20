@@ -67,10 +67,8 @@ sub_info.comments = notes;
 % folder name of Visor EMG data
 subject_folder = fullfile(data_folder,strcat('sub-',subject_id),'Sessions');
 pre_proc_folder = fullfile(data_folder,'pre-processed',sprintf('sub-%s',subject_id));
-if ~isfolder(pre_proc_folder)
-    mkdir(pre_proc_folder);
-else
-end
+if ~isfolder(pre_proc_folder); mkdir(pre_proc_folder); end
+
 % list sessions
 session_list = dir(subject_folder);
 session_folder = session_list(~ismember({session_list.name}, {'.', '..'}));
@@ -152,10 +150,11 @@ end
 
 
 for itrial = 1:size(mep_data,1)
-if isempty(idx_exclud)
-    disp(strcat([num2str(0),' MEPs excluded']))
-else
-    disp(strcat([num2str(idx-1),' MEPs excluded']))
+    if isempty(idx_exclud)
+        disp(strcat([num2str(0),' MEPs excluded']))
+    else
+        disp(strcat([num2str(idx-1),' MEPs excluded']))
+    end
 end
 % exclude MEP + warning if baseline noise max amplitude > 15 µV
 
