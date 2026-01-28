@@ -135,7 +135,7 @@ end
 %%%%%%%%%%%%
 
 % define baseline window to check for baseline activity
-bsln_time_window = [-0.2 0];
+bsln_time_window = [-0.2 0]; % stop 5-10 ms before TMS
 bsln_sample_window = [1 round(0.2*sr+1)];
 
 % First check: for baseline single trial EMG activity (RMS) per block
