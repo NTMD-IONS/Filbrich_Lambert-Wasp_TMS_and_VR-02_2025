@@ -1,5 +1,7 @@
+% function to process MEPs and rename trials based on VR txt files
+% it also extract MEPs amplitudes and latencies for each block.
 % 
-% 
+% TO DO:
 % decide on folder and subject level naming of the acquisitions
 % sub-00$
 % main_folder contains the raw_data folder, pre-processed data folder,
@@ -11,8 +13,16 @@
 % (sub-001 is test_giulia)
 % (sub-002 is Laurie)
 %
-% % Cédric Lenoir, NeTMeD, IoNS, UCLouvain, January 2026
+% the fucntion requires:
+%   the package natsortfiles 
+%   letswave6
 % 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% Cédric Lenoir, NeTMeD, IoNS, UCLouvain, January 2026
+
+function mep_process
+
+
 %% 1) LOAD DATA AND SET A FEW PARAMETERS
 
 % set the paths and initialize letswave
@@ -74,6 +84,7 @@ sub_info.TMS_triggers.pst = [ixd_tms_pst_start;ixd_tms_pst_stop];
 sub_info.comments = notes;
 
 % folder name of Visor EMG data
+gen_subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id));
 subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id),'Sessions');
 sub_pre_proc_folder = fullfile(pre_proc_folder,sprintf('sub-%s',subject_id));
 if ~isfolder(sub_pre_proc_folder); mkdir(sub_pre_proc_folder); end
@@ -133,6 +144,27 @@ end
 %%%%%%%%%%%%
 % name the MEPs according to trial condition per block !!
 %%%%%%%%%%%%
+
+% load the text file from the VR software
+% get the names of the files and get the date and time
+txt_files = dir(fullfile(gen_subject_folder,'*TMSSensitized*.csv'));
+for ifile = 1:size(txt_files,1)
+    idx_date = strfind(txt_files(ifile).name,'TMSSensitized_');
+    txt_date_files{ifile,1} = txt_files(ifile).name(idx_date:end);
+end
+% sort files by date and time
+[~, idx, ~] = natsort(txt_date_files,'\d+');
+
+% get the events codes for BLK1 to 5
+% loop across BLK
+% here example for BLK 2 first post HFS
+
+% read the .csv file
+temp = readtable(fullfile(gen_subject_folder,txt_files(idx(2)).name));
+
+% trial labels are in temp.TYPE
+
+
 
 % define baseline window to check for baseline activity
 bsln_time_window = [-0.2 0]; % stop 5-10 ms before TMS
@@ -424,4 +456,7 @@ for ichan = 1:2
         xline(trigger_idx,'r-','TMS','LabelHorizontalAlignment','left')
         legend(pe4,'ALL','box','off')
     end
+end
+
+
 end
