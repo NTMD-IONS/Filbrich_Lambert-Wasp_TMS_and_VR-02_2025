@@ -50,14 +50,20 @@ else
     letswave();
     clc
 end
-
+% check if natsorfiles toolbox is on the path
+if contains(path, 'C:\Users\cedlenoir\Documents\MATLAB\natsortfiles')
+else
+    natsortfiles_path = uigetdir('C:\Users\cedlenoir\Documents\MATLAB','Select natsortfiles folder');
+    addpath(genpath(natsortfiles_path))
+    clc
+end
 % dialog box
 prompt = {'\fontsize{12} Subject ID? :','\fontsize{12} Sensitized arm (L/R): ','\fontsize{12} Stimulated hemisphere (L/R):',...
-    '\fontsize{12} TMS PRE-CAPS start index? : ','\fontsize{12} TMS PRE-CAPS stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS start index? : ','\fontsize{12} TMS POST-CAPS stop index? : ',...
+    '\fontsize{12} TMS PRE-CAPS BLK1 start index? : ','\fontsize{12} TMS PRE-CAPS BLK1 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLK2 start index? : ','\fontsize{12} TMS POST-CAPS BLK2 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLK3 start index? : ','\fontsize{12} TMS POST-CAPS BLK3 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLK4 start index? : ','\fontsize{12} TMS POST-CAPS BLK4 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLK5 start index? : ','\fontsize{12} TMS POST-CAPS BLK5 stop index? : ',...
     '\fontsize{12} EMG trial plots? : YES -> 1 OR NO -> 0','\fontsize{12} Comments: ',};
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
@@ -73,7 +79,7 @@ ixd_tms_pst_start = str2double([info(6) info(8) info(10) info(12)]);
 ixd_tms_pst_stop = str2double([info(7) info(9) info(11) info(13)]);
 plot_opt_EMG = str2double(info(14));
 notes = str2double(info(15));
-
+block_num = 5;
 % store info in structure
 sub_info = struct;
 sub_info.sub_ID = subject_id;
@@ -127,25 +133,23 @@ CLW_save(sub_pre_proc_folder,seg_header, seg_data);
 
 % keep TMS events after rMT
 % arrange epochs of valid TMS triggers for each TMS block
-valid_tms_idx = cell(5,1);
-for iblock = 1:5
+valid_tms_idx = cell(block_num,1);
+for iblock = 1:block_num
     if iblock == 1
         valid_tms_idx{iblock,1} = (ixd_tms_pre_start:ixd_tms_pre_stop);
     else
         valid_tms_idx{iblock,1} = (ixd_tms_pst_start(iblock-1):ixd_tms_pst_stop(iblock-1));
     end
 end
-for iblock = 1:5
+for iblock = 1:block_num
     [block_header{iblock,1}, block_data{iblock,1}] = RLW_arrange_epochs(seg_header, seg_data,valid_tms_idx{iblock,1});
     block_header{iblock,1}.name = strcat(seg_header.name,' BLK ',num2str(iblock));
     CLW_save(sub_pre_proc_folder,block_header{iblock,1}, block_data{iblock,1});
 end
 
-%%%%%%%%%%%%
-% name the MEPs according to trial condition per block !!
-%%%%%%%%%%%%
-
-% load the text file from the VR software
+% Sort MEPs according to trial condition per block ans save lw file for each events
+event_labels ={'base','sensi','ctrl'};
+% load the text files from the VR software
 % get the names of the files and get the date and time
 txt_files = dir(fullfile(gen_subject_folder,'*TMSSensitized*.csv'));
 for ifile = 1:size(txt_files,1)
@@ -155,26 +159,50 @@ end
 % sort files by date and time
 [~, idx, ~] = natsort(txt_date_files,'\d+');
 
-% get the events codes for BLK1 to 5
-% loop across BLK
-% here example for BLK 2 first post HFS
+% read the .csv file to get the events codes for BLK 1 to 5
+for iblock = 1:block_num
+    temp = readtable(fullfile(gen_subject_folder,txt_files(idx(iblock)).name));
+    for itrial = 1:size(temp,1)
+        idx_base(itrial,1) = strfind(temp.TYPE(itrial),'BASE');
+        idx_sensi(itrial,1) = strfind(temp.TYPE(itrial),'WASPsensi');
+        idx_ctrl(itrial,1) = strfind(temp.TYPE(itrial),'WASPcontrol');
+    end
 
-% read the .csv file
-temp = readtable(fullfile(gen_subject_folder,txt_files(idx(2)).name));
-
-% trial labels are in temp.TYPE
-
-
+    % rename the events
+    for itrial = 1:size(temp,1)
+        if ~isempty(idx_base{itrial,1})
+            block_header{iblock,1}.events(itrial).code = event_labels{1,1};
+        else
+        end
+        if ~isempty(idx_sensi{itrial,1})
+            block_header{iblock,1}.events(itrial).code = event_labels{1,2};
+        else
+        end
+        if ~isempty(idx_ctrl{itrial,1})
+            block_header{iblock,1}.events(itrial).code = event_labels{1,3};
+        else
+        end
+    end
+    % overwrite the datasets with renamed label events
+    CLW_save(sub_pre_proc_folder,block_header{iblock,1}, block_data{iblock,1});
+    clear temp idx_date idx_ctrl idx_sensi idx_base
+end
 
 % define baseline window to check for baseline activity
-bsln_time_window = [-0.2 0]; % stop 5-10 ms before TMS
-bsln_sample_window = [1 round(0.2*sr+1)];
+bsln_time_window = [-0.2 -0.01];
+bsln_sample_window = [1 round((abs(bsln_time_window(1))-abs(bsln_time_window(2)))*sr+1)];
 
 % First check: for baseline single trial EMG activity (RMS) per block
 % threshold is mean(RMS) + 2.5*std(RMS)
 % (as in Sulcova D. et al. bioRxiv 2022; Grandjean and Duque NIMG 2020)
 
-% loop until no outliers is identified
+% prepare x values for plotting
+xval = -0.2:1/sr:0.5;
+
+% loop until no outliers is identified + automatic plot of the discarded trial
+disp(' ')
+disp('Iterative trial RMS for baseline above mean RMS')
+disp(' ')
 for iblock = 1:5
 
     run_loop = 1;
@@ -203,34 +231,44 @@ for iblock = 1:5
             else
                 idx_exclud{iblock,iloop}(idx_exc,1) = itrial;
                 idx_exc = idx_exc+1;
+                % plot discarded trial
+                f = figure('Color','w','Position',[0 0 1500 700]);
+                figure(f);
+                temp_plot_data{iblock,1} = squeeze(block_data{iblock,1});
+                plot(xval,temp_plot_data{iblock,1}(idx_exclud{iblock,iloop}(end),:),'k','LineWidth',1)
+                xline(0,'--r','TMS','LabelOrientation','horizontal')
+                yline(0,'-k')
+                yline(bsln_rms{iblock,1}(idx_exclud{iblock,iloop}(end),1),'--k','RMS','LabelOrientation','horizontal','LabelVerticalAlignment','top','LabelHorizontalAlignment','left')
+                yline(avg_bsln_rms(iblock,iloop),'--m','Average RMS','LabelOrientation','horizontal','LabelVerticalAlignment','bottom','LabelHorizontalAlignment','right')
+                ax = gca;
+                ax.TickDir = 'out';
+                ax.XLabel.String = 'time (s)';
+                ax.YLabel.String = 'amplitude (µV)';
+                ax.YLim = [-200 200];
+                ax.Box = 'off';
+                title(strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,iloop}(end)),' in block ',num2str(iblock)]))
+                pause()
+                close (f)
             end
         end
+        disp(strcat(['Block-',num2str(iblock),': ',num2str(length(idx_exclud{iblock,iloop})),' MEP discarded after iteration-',num2str(iloop)]))
         if isempty(idx_exclud{iblock,iloop})
             run_loop = 0;
-            disp(strcat(['Loop stop after ',num2str(iloop),' iteration(s): ',num2str(length(idx_exclud{iblock,iloop})),' MEP discarded']))
         else
             iloop = iloop+1;
             temp_data{iblock,iloop} = valid_data{iblock,1};
             valid_data{iblock,1} = [];
             bsln_rms{iblock,1} = [];
             idx_exclud{iblock,iloop} = [];
-            disp(strcat(['---> iteration ',num2str(iloop),' --->']))
         end
     end
 end
 
-% Warning: display the number of MEP excluded for each block and loop
-clc
-disp('Results of first check:')
-disp(' ')
-for iblock = 1:size(idx_exclud,1)
-    for iloop = 1:size(idx_exclud,2)
-        if isempty(idx_exclud{iblock,iloop})
-            disp(strcat(['No MEPs exclude in block ',num2str(iblock),' at loop ',num2str(iloop)]))
-            break
-        else
-            disp(strcat([num2str(length(idx_exclud{iblock,iloop})),' MEPs excluded in block ',num2str(iblock),' at loop ',num2str(iloop)]))
-        end
+% store indices of discarded trials
+all_exclud = cell(5,1);
+for iblock = 1:block_num
+    for icleaning = 1:iloop
+        all_exclud{iblock,1} = [all_exclud{iblock,1}, idx_exclud{iblock,icleaning}];
     end
 end
 
@@ -254,27 +292,30 @@ for iblock = 1:5
     end
 end
 % Warning: display the number of MEP excluded for each block
-clc
-disp('Results of second check:')
+disp(' ')
+disp(['Threshold for baseline at ',num2str(abs_thrshld),' µV'])
 disp(' ')
 for iblock = 1:size(idx_exclud,1)
     if isempty(idx_exclud{iblock,end})
-        disp(strcat(['No MEPs exclude in block ',num2str(iblock)]))
+        disp(strcat(['Block-',num2str(iblock),': 0 MEP discarded']))
     else
-        disp(strcat([num2str(length(idx_exclud{iblock,end})),' MEPs excluded in block ',num2str(iblock)]))
+        disp(strcat(['Block-',num2str(iblock),': ',num2str(size(idx_exclud{iblock,end},1)),' MEP discarded']))
     end
 end
 
-% plot MEP and criteria
-xval = -0.2:1/sr:0.5;
+% plot the discarded trials
 for iblock = 1:5
     for itrial = 1:size(idx_exclud{iblock,end},1)
         f = figure('Color','w','Position',[0 0 1500 700]);
-        plot(xval,valid_data{iblock,1}(idx_exclud{iblock,end}(itrial,1),:),'k','LineWidth',1)
+        figure(f);
+
+        temp_plot_data{iblock,1} = squeeze(block_data{iblock,1});
+        plot(xval,temp_plot_data{iblock,1}(idx_exclud{iblock,end}(itrial,1),:),'k','LineWidth',1)
+        
         xline(0,'--r','TMS','LabelOrientation','horizontal')
         yline(0,'-k')
         yline(bsln_rms{iblock,1}(idx_exclud{iblock,end}(itrial,1),1),'--k','RMS','LabelOrientation','horizontal','LabelVerticalAlignment','top','LabelHorizontalAlignment','left')
-        yline(abs_thrshld,'--m','absolute threshold','LabelOrientation','horizontal','LabelVerticalAlignment','top','LabelHorizontalAlignment','right')
+        yline(abs_thrshld,'--m','absolute threshold','LabelOrientation','horizontal','LabelVerticalAlignment','bottom','LabelHorizontalAlignment','right')
         ax = gca;
         ax.TickDir = 'out';
         ax.XLabel.String = 'time (s)';
@@ -283,17 +324,37 @@ for iblock = 1:5
         ax.Box = 'off';
         title(strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,end}(itrial,1)),' in block ',num2str(iblock)]))
         pause()
+        close(f)
     end
+end
+
+% merge the indices of all excluded trials
+for iblock = 1:block_num
+    all_exclud{iblock,1} = sort([all_exclud{iblock,1}; idx_exclud{iblock,end}]);
 end
 
 % save the valid MEPs for each block
 for iblock = 1:size(valid_data,1)
     clean_header{iblock,1} = block_header{iblock,1};
     clean_header{iblock,1}.name = strcat([clean_header{iblock,1}.name,' clean']);
-    clean_header{iblock,1}.events = [];
+    % discard events or trials from all_exclud
+    clean_header{iblock,1}.events(all_exclud{iblock,1}) = [];
+    % fix epochs numbering
+for ievent = 1:size(clean_header{iblock,1}.events,2)
+    clean_header{iblock,1}.events(ievent).epoch = ievent;
+end
     clean_data{iblock,1}(:,1,1,1,1,:) = valid_data{iblock,2};
     clean_header{iblock,1}.datasize = size(clean_data{iblock,1});
     CLW_save(sub_pre_proc_folder,clean_header{iblock,1},clean_data{iblock,1});
+end
+
+% slipt the valid MEP trials in separate files per event types
+for iblock = 1:block_num
+    out_datasets = RLW_segmentation2(clean_header{iblock,1}, clean_data{iblock,1},event_labels,'x_start',xstart,'x_duration',xduration);
+    for ilabel = 1:size(out_datasets,2)
+        CLW_save(sub_pre_proc_folder,out_datasets(ilabel).header, out_datasets(ilabel).data);
+    end
+    clear out_datasets
 end
 
 % define MEP peak-to-peak amplitude criterion > 50 µV in specific window (s)
@@ -334,129 +395,6 @@ end
 % extract MEP latencies
 
 
-
-
-%% 2) PREPROCESS EMG DATA
-
-avg_emg_bl = zeros(trials,1);
-
-for itrial = 1:trials
-    for ichan = 1:2
-        % baseline correction
-        data.emg_filt(:,ichan,itrial) = data.emg_filt(:,ichan,itrial) - mean(data.emg_filt(1:baselineWind*sr,ichan,itrial));
-
-        %%%%%%%%%%% check if there is backgroun noise / pre-stimulus muscular activity ?
-
-        avg_emg_bl(ichan,itrial) = mean(data.emg_filt(1:baselineWind*sr,ichan,itrial));
-
-        % find max and min peaks in the response time window, and 10 ms after TMS pulse to avoid artefact and get its latency
-        [data.peak_max_amp_emg(itrial,ichan), data.peak_max_time_emg(itrial,ichan)] = max(squeeze(data.emg_filt((responseEMGWind(1)+(0.01*sr)):responseEMGWind(2),ichan,itrial)));
-        [data.peak_min_amp_emg(itrial,ichan), data.peak_min_time_emg(itrial,ichan)] = min(squeeze(data.emg_filt((responseEMGWind(1)+(0.01*sr)):responseEMGWind(2),ichan,itrial)));
-        data.peak_max_time_emg(itrial,ichan) = data.peak_max_time_emg(itrial,ichan) + responseEMGWind(1)+(0.01*sr)-1;
-        data.peak_min_time_emg(itrial,ichan) = data.peak_min_time_emg(itrial,ichan) + responseEMGWind(1)+(0.01*sr)-1;
-
-        data.p2p_amp_emg(itrial,ichan) = abs(data.peak_max_amp_emg(itrial,ichan)) + abs(data.peak_min_amp_emg(itrial,ichan));
-
-        % check the duration between min and max, and warning if greater
-        % than 15 ms
-        data.p2p_time_intv(itrial,ichan) = abs(data.peak_max_time_emg(itrial,ichan) - data.peak_min_time_emg(itrial,ichan));
-        if data.p2p_time_intv(itrial,ichan) > 0.015*sr
-            data.p2p_amp_emg(itrial,ichan) = NaN;
-            data.MEP_latency(itrial,ichan) = NaN;
-        else
-        end
-
-        % check if latency of MEPs is valid (< 40 ms)
-        if ~isnan(data.p2p_amp_emg(itrial,ichan))
-
-            if data.peak_max_time_emg(itrial,ichan) < responseEMGWind(2) && data.peak_max_time_emg(itrial,ichan) < data.peak_min_time_emg(itrial,ichan)
-                data.p2p_amp_emg(itrial,ichan) = data.p2p_amp_emg(itrial,ichan);
-                data.MEP_latency(itrial,ichan) = data.peak_max_time_emg(itrial,ichan);
-            elseif data.peak_min_time_emg(itrial,ichan) < responseEMGWind(2) && data.peak_min_time_emg(itrial,ichan) < data.peak_max_time_emg(itrial,ichan)
-                data.p2p_amp_emg(itrial,ichan) = data.p2p_amp_emg(itrial,ichan);
-                data.MEP_latency(itrial,ichan) = data.peak_min_time_emg(itrial,ichan);
-            else
-                data.p2p_amp_emg(itrial,ichan) = NaN;
-                data.MEP_latency(itrial,ichan) = NaN;
-            end
-
-        elseif isnan(data.p2p_amp_emg(itrial,ichan))
-            data.MEP_latency(itrial,ichan) = NaN;
-        end
-
-        % check if the MEP p2p amplitude are > than threshold
-        if ~isnan(data.p2p_amp_emg(itrial,ichan)) && data.p2p_amp_emg(itrial,ichan) > emg_threshold
-            data.p2p_amp_emg(itrial,ichan) = data.p2p_amp_emg(itrial,ichan);
-        else
-            data.p2p_amp_emg(itrial,ichan) = NaN;
-            data.MEP_latency(itrial,ichan) = NaN;
-        end
-
-    end
-end
-
-% list the indices of valid MEPs among all trials
-for ichan= 1:2
-    for itrial = 1:trials
-        idxMEP(itrial,ichan) = ~isnan(data.p2p_amp_emg(itrial,ichan));
-    end
-    valid_MEP_trials{:,ichan} = find(idxMEP(:,ichan));
-end
-
-%% Plot EMG and peaks
-
-if plot_opt_EMG == 1
-    % remove trials with no MEP
-
-    for ichan = 1:2
-        for itrial = 1:length(valid_MEP_trials{1,ichan})
-
-            figure('Position',[600,0,600,500],'Color','w');
-            %     subplot(2,1,1)
-            pe1 = plot(data.emg_filt(:,ichan,valid_MEP_trials{1,ichan}(itrial)),'b');
-            title(strcat('EMG-',file_list(chosen_file).name(1:end-4),'-chan-"',data.chaninfo(1).title,'"-trial#',num2str(valid_MEP_trials{1,ichan}(itrial))))
-            hold on
-            pe2 = plot(data.peak_max_time_emg(valid_MEP_trials{1,ichan}(itrial),ichan),data.peak_max_amp_emg(valid_MEP_trials{1,ichan}(itrial),ichan),'xr','MarkerSize',20);
-            pe3 = plot(data.peak_min_time_emg(valid_MEP_trials{1,ichan}(itrial),ichan),data.peak_min_amp_emg(valid_MEP_trials{1,ichan}(itrial),ichan),'xr','MarkerSize',20);
-            ax= gca;
-            ax.Box = 'off';
-            ax.XLabel.String = 'time(ms)';
-            ax.YLabel.String = strcat('amplitude (mV)');
-            ax.XTickLabel = {'-500','-400','-300','-200','-100','0','100','200','300','400','500'};
-            xline(responseEMGWind(2),'k--','response window','LabelHorizontalAlignment','right')
-            xline(trigger_idx,'r--','TMS','LabelHorizontalAlignment','left')
-            legend(pe3,'peak-to-peak','box','off')
-        end
-    end
-
-    pause(1)
-    disp('To continue and close all figures press any key !')
-    pause()
-    close all; clc
-
-else
-end
-
-
-%% plot all EMG traces
-for ichan = 1:2
-    for itrial = 1:trials
-        figure('Position',[0,0,600,500],'Color','w');
-        pe4 = plot(data.emg_filt(:,ichan,itrial),'r');
-        title(strcat('EMG-',file_list(choose_file).name(6:end-4),'-chan#',num2str(ichan),'-',data.chaninfo(2).title,'-trial#',num2str(itrial)))
-        hold on
-        pe5 = plot(data.peak_max_time_emg(itrial,ichan),data.peak_max_amp_emg(itrial,ichan),'xr','MarkerSize',20);
-        pe6 = plot(data.peak_min_time_emg(itrial,ichan),data.peak_min_amp_emg(itrial,ichan),'xr','MarkerSize',20);
-        ax= gca;
-        ax.Box = 'off';
-        ax.XLabel.String = 'time(ms)';
-        ax.YLabel.String = strcat('amplitude (mV)');
-        xline(responseEMGWind(1),'k--')
-        xline(responseEMGWind(2),'k--')
-        xline(trigger_idx,'r-','TMS','LabelHorizontalAlignment','left')
-        legend(pe4,'ALL','box','off')
-    end
-end
 
 
 end
