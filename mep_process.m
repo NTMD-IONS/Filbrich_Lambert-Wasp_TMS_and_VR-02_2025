@@ -1,27 +1,28 @@
 % function to process MEPs and rename trials based on VR txt files
-% it also extract MEPs amplitudes and latencies for each block.
+% it also extracts MEPs amplitudes and latencies for each block.
 % 
-% TO DO:
-% decide on folder and subject level naming of the acquisitions
+% Folder and subject names naming are build whatever names are encoded in
+% the VR software
 % sub-00$
 % main_folder contains the raw_data folder, pre-processed data folder,
-% results folder, (scripts folder?)
+% results folder, scripts folder (with toolboxes)
 % 
-% Block 1 (BLK1) is the block pre-HFS
-% Block 2 to 5 (BLK2 to BLK5) are the blocks post-HFS
+% Block 1 (BLK1) is the pre-HFS block
+% Block 2 to 5 (BLK2 to BLK5) are the post-HFS blocks
 % 
-% (sub-001 is test_giulia)
-% (sub-002 is Laurie)
+% 
+% 
+% 
 %
-% the fucntion requires:
-%   the package natsortfiles 
-%   letswave6
+%
+% Required toolboxes:
+%   natsortfiles (2022, Stephen Cobeldick)
+%   letswave 6
 % 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 % Cédric Lenoir, NeTMeD, IoNS, UCLouvain, January 2026
 
 function mep_process
-
 
 %% 1) LOAD DATA AND SET A FEW PARAMETERS
 
@@ -38,6 +39,7 @@ if ~isfolder(results_folder); mkdir(results_folder); end
 if ~isfolder(pre_proc_folder); mkdir(pre_proc_folder); end
 
 addpath(genpath(main_folder))
+close all hidden
 
 % initialize letswave 6
 % check if lw is already on the path if not select the folder of the toolobx
@@ -93,7 +95,9 @@ sub_info.comments = notes;
 gen_subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id));
 subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id),'Sessions');
 sub_pre_proc_folder = fullfile(pre_proc_folder,sprintf('sub-%s',subject_id));
+sub_results_folder = fullfile(results_folder,sprintf('sub-%s',subject_id));
 if ~isfolder(sub_pre_proc_folder); mkdir(sub_pre_proc_folder); end
+if ~isfolder(sub_results_folder); mkdir(sub_results_folder); end
 
 % list sessions
 session_list = dir(subject_folder);
@@ -112,7 +116,9 @@ clear out_data
 [header, data] = CLW_load(fullfile(sub_pre_proc_folder,savename));
 sr = 1/header.xstep;
 
-% pre-processign steps in lw
+
+%% 2) Pre-processing steps in letswave
+
 % DC removal
 [dc_header, dc_data] = RLW_dc_removal(header,data,'linear_detrend',0);
 
@@ -131,6 +137,9 @@ seg_header.name = strcat(header.name,' DC HPfilt ep');
 % save dataset
 CLW_save(sub_pre_proc_folder,seg_header, seg_data);
 
+
+%% 3) Remove irrelevant TMS events
+
 % keep TMS events after rMT
 % arrange epochs of valid TMS triggers for each TMS block
 valid_tms_idx = cell(block_num,1);
@@ -147,7 +156,9 @@ for iblock = 1:block_num
     CLW_save(sub_pre_proc_folder,block_header{iblock,1}, block_data{iblock,1});
 end
 
-% Sort MEPs according to trial condition per block ans save lw file for each events
+
+%% 4) Sort MEPs according to trial condition (from VR files) per block and save lw file for each event
+
 event_labels ={'base','sensi','ctrl'};
 % load the text files from the VR software
 % get the names of the files and get the date and time
@@ -187,6 +198,9 @@ for iblock = 1:block_num
     CLW_save(sub_pre_proc_folder,block_header{iblock,1}, block_data{iblock,1});
     clear temp idx_date idx_ctrl idx_sensi idx_base
 end
+
+
+%% 5) Discard MEPs if baseline activity
 
 % define baseline window to check for baseline activity 200 ms before TMS pulse
 bsln_time_window = [-0.2 0];
@@ -246,7 +260,7 @@ for iblock = 1:block_num
                 ax.YLabel.String = 'amplitude (µV)';
                 ax.YLim = [-200 200];
                 ax.Box = 'off';
-                title(strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,iloop}(end)),' in block ',num2str(iblock)]))
+                title({'First check iterative RMS'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,iloop}(end)),' in block ',num2str(iblock)])})
                 pause()
                 close (f)
             end
@@ -321,7 +335,7 @@ for iblock = 1:block_num
         ax.YLabel.String = 'amplitude (µV)';
         ax.YLim = [-200 200];
         ax.Box = 'off';
-        title(strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,end}(itrial,1)),' in block ',num2str(iblock)]))
+        title({'Second check RMS threshold'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,end}(itrial,1)),' in block ',num2str(iblock)])})
         pause()
         close(f)
     end
@@ -347,7 +361,9 @@ end
     CLW_save(sub_pre_proc_folder,clean_header{iblock,1},clean_data{iblock,1});
 end
 
-% slipt the valid MEP trials in separate files per event types
+
+%% 6) Split the valid MEP trials in separate files per event types
+
 for iblock = 1:block_num
     out_datasets = RLW_segmentation2(clean_header{iblock,1}, clean_data{iblock,1},event_labels,'x_start',xstart,'x_duration',xduration);
     for ilabel = 1:size(out_datasets,2)
@@ -356,7 +372,9 @@ for iblock = 1:block_num
     clear out_datasets
 end
 
-% extract MEPs peak-to-peak amplitude in specific window between 10 ms and 50 ms after TMS
+
+%% 7) extract MEPs peak-to-peak amplitude in specific window between 10 ms and 50 ms after TMS
+
 response_window = round([0.210*sr+1 0.250*sr+1]);
 % do it for each trial type sorted file, first list them
 list_base = dir(fullfile(sub_pre_proc_folder,'*base *.mat'));
@@ -365,6 +383,8 @@ list_ctrl = dir(fullfile(sub_pre_proc_folder,'*ctrl *.mat'));
 
 % for base trials
 base_idx_bad = 1;
+base_bad_mep = cell(size(list_base,1),1);
+base_answ = cell(size(list_base,1),1);
 for ifile = 1:size(list_base,1)
     [base_header{ifile,1}, base_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_base(ifile).name));
     base_data{ifile,1} = squeeze(base_data{ifile,1});
@@ -374,20 +394,22 @@ for ifile = 1:size(list_base,1)
 
         % check if time inteval between positive and negative maxima is ok
         if abs(base_max_lat{ifile,itrial} - base_min_lat{ifile,itrial}) > round(0.015*sr,1)
-            base_bad_mep{ifile,1}(idx_bad,1) = itrial;
-            base_idx_bad = base_idx_bad+1;
+            base_bad_mep{ifile,1}(base_idx_bad,1) = itrial;
             disp(' ')
             disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_base(ifile).name]));
             disp(' ')
             figure, plot(base_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(base_max_lat{ifile,itrial},base_max_p{ifile,itrial},'*r','MarkerSize',10)
-            plot(base_min_lat{ifile,itrial},base_min_p{ifile,itrial},'*r','MarkerSize',10)
-          
+            plot(base_min_lat{ifile,itrial},base_min_p{ifile,itrial},'*r','MarkerSize',10), title({strcat('trial#',num2str(itrial))},{list_base(ifile).name})
+            base_answ{ifile,1}(base_idx_bad,1) = questdlg('Discard this MEP?','P-2-P?','yes','no','yes');
+            base_idx_bad = base_idx_bad+1;
         else
         end
     end
 end
 % for ctrl trials
 ctrl_idx_bad = 1;
+ctrl_bad_mep = cell(size(list_ctrl,1),1);
+ctrl_answ = cell(size(list_ctrl,1),1);
 for ifile = 1:size(list_ctrl,1)
     [ctrl_header{ifile,1}, ctrl_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_ctrl(ifile).name));
     ctrl_data{ifile,1} = squeeze(ctrl_data{ifile,1});
@@ -397,20 +419,14 @@ for ifile = 1:size(list_ctrl,1)
 
         % check if time inteval between positive and negative maxima is ok
         if abs(ctrl_max_lat{ifile,itrial} - ctrl_min_lat{ifile,itrial}) > round(0.015*sr,1)
-            ctrl_bad_mep{ifile,1}(idx_bad,1) = itrial;
-            ctrl_idx_bad = ctrl_idx_bad+1;
+            ctrl_bad_mep{ifile,1}(ctrl_idx_bad,1) = itrial;
             disp(' ')
             disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_ctrl(ifile).name]));
             disp(' ')
             figure, plot(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(ctrl_max_lat{ifile,itrial},ctrl_max_p{ifile,itrial},'*r','MarkerSize',10)
-            plot(ctrl_min_lat{ifile,itrial},ctrl_min_p{ifile,itrial},'*r','MarkerSize',10)
-            
-            % % % % if MEPs is not valid
-            % % %     % store index to then remove it variable to be saved in the MEP struct
-            % % % % else
-            % % %     % keep it
-            % % % % end
-
+            plot(ctrl_min_lat{ifile,itrial},ctrl_min_p{ifile,itrial},'*r','MarkerSize',10), title({strcat('trial#',num2str(itrial))},{list_ctrl(ifile).name})
+            ctrl_answ{ifile,1}(ctrl_idx_bad,1) = questdlg('Discard this MEP?','P-2-P?','yes','no','yes');
+            ctrl_idx_bad = ctrl_idx_bad+1;
         else
         end
     end
@@ -418,6 +434,8 @@ end
 
 % for sensi trials
 sensi_idx_bad = 1;
+sensi_bad_mep = cell(size(list_sensi,1),1);
+sensi_answ = cell(size(list_sensi,1),1);
 for ifile = 1:size(list_sensi,1)
     [sensi_header{ifile,1}, sensi_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_sensi(ifile).name));
     sensi_data{ifile,1} = squeeze(sensi_data{ifile,1});
@@ -427,19 +445,22 @@ for ifile = 1:size(list_sensi,1)
 
         % check if time inteval between positive and negative maxima is ok
         if abs(sensi_max_lat{ifile,itrial} - sensi_min_lat{ifile,itrial}) > round(0.015*sr,1)
-            sensi_bad_mep{ifile,1}(idx_bad,1) = itrial;
-            sensi_idx_bad = sensi_idx_bad+1;
+            sensi_bad_mep{ifile,1}(sensi_idx_bad,1) = itrial;
             disp(' ')
             disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_sensi(ifile).name]));
             disp(' ')
             figure, plot(sensi_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(sensi_max_lat{ifile,itrial},sensi_max_p{ifile,itrial},'*r','MarkerSize',10)
-            plot(sensi_min_lat{ifile,itrial},sensi_min_p{ifile,itrial},'*r','MarkerSize',10)
+            plot(sensi_min_lat{ifile,itrial},sensi_min_p{ifile,itrial},'*r','MarkerSize',10), title({strcat('trial#',num2str(itrial))},{list_sensi(ifile).name})
+            sensi_answ{ifile,1}(sensi_idx_bad,1) = questdlg('Discard this MEP?','P-2-P?','y','n','y');
+            sensi_idx_bad = sensi_idx_bad+1;
         else
         end
     end
 end
 
-% store MEPs amplitudes
+
+%% 8) Store and save MEPs amplitudes in a single .mat file
+
 MEP = struct;
 % for base trials
 for ifile = 1:size(list_base,1)
@@ -478,8 +499,58 @@ for ifile = 1:size(list_sensi,1)
 end
 % save number of discarded MEPs
 MEP.excludedPerBlock = all_exclud;
+% save indices of suspicious MEPs
+MEP.base.warningMEP = base_bad_mep;
+MEP.base.warningMEP = ctrl_bad_mep;
+MEP.base.warningMEP = sensi_bad_mep;
+save(fullfile(sub_results_folder,strcat(savename,'_meps')),'MEP')
 
-save(fullfile(results_folder,strcat(savename,'_meps')),'MEP')
 
+%% 9) Concatenate MEPs amplitudes across blocks and exclude suspicious MEPs
+variable_names = {'base', 'ctrl', 'sensi'};
+temp_base = [];
+for ifile = 1:size(MEP.base.amp,1)
+    if ~isempty(base_answ{ifile,1})
+        MEP.base.amp{ifile,1}(base_bad_mep{ifile,1}) = [];
+        temp_base = [temp_base;MEP.base.amp{ifile,1}];
+    else
+        temp_base = [temp_base;MEP.base.amp{ifile,1}];
+    end
+end
+
+temp_ctrl = [];
+for ifile = 1:size(MEP.ctrl.amp,1)
+    if ~isempty(ctrl_answ{ifile,1})
+        MEP.ctrl.amp{ifile,1}(ctrl_bad_mep{ifile,1}) = [];
+        temp_ctrl = [temp_ctrl;MEP.ctrl.amp{ifile,1}];
+    else
+        temp_ctrl = [temp_ctrl;MEP.ctrl.amp{ifile,1}];
+    end
+end
+
+temp_sensi = [];
+for ifile = 1:size(MEP.sensi.amp,1)
+    if ~isempty(sensi_answ{ifile,1})
+        MEP.sensi.amp{ifile,1}(sensi_bad_mep{ifile,1}) = [];
+        temp_sensi = [temp_sensi;MEP.sensi.amp{ifile,1}];
+    else
+        temp_sensi = [temp_sensi;MEP.sensi.amp{ifile,1}];
+    end
+end
+
+
+%% 10) Export the MEPs amplitude data for the current subject per trial type in .csv files
+% baseline
+base_table = array2table(temp_base,'VariableNames',{'base_amp'});
+base_csv_name = strcat(savename,'_meps_base.csv');
+writetable(base_table,fullfile(sub_results_folder,base_csv_name),'Delimiter', ',')
+% WASP control
+ctrl_table = array2table(temp_ctrl,'VariableNames',{'ctrl_amp'});
+ctrl_csv_name = strcat(savename,'_meps_ctrl.csv');
+writetable(ctrl_table,fullfile(sub_results_folder,ctrl_csv_name),'Delimiter', ',')
+% WASP sensitized
+sensi_table = array2table(temp_sensi,'VariableNames',{'sensi_amp'});
+sensi_csv_name = strcat(savename,'_meps_sensi.csv');
+writetable(sensi_table,fullfile(sub_results_folder,sensi_csv_name),'Delimiter', ',')
 
 end
