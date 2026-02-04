@@ -64,11 +64,11 @@ prompt = {'\fontsize{12} Subject ID? :','\fontsize{12} Sensitized arm (L/R): ','
     '\fontsize{12} TMS POST-CAPS BLK3 start index? : ','\fontsize{12} TMS POST-CAPS BLK3 stop index? : ',...
     '\fontsize{12} TMS POST-CAPS BLK4 start index? : ','\fontsize{12} TMS POST-CAPS BLK4 stop index? : ',...
     '\fontsize{12} TMS POST-CAPS BLK5 start index? : ','\fontsize{12} TMS POST-CAPS BLK5 stop index? : ',...
-    '\fontsize{12} EMG trial plots? : YES -> 1 OR NO -> 0','\fontsize{12} Comments: ',};
+    '\fontsize{12} Baseline RMS threshold (µV): ','\fontsize{12} Comments: ',};
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
 dims = repmat([1 80],15,1);
-definput = {'002','R','L','114','137','138','164','165','192','193','220','221','246','1',''};
+definput = {'002','R','L','114','137','138','164','165','192','193','220','221','246','15',''};
 info = inputdlg(prompt,dlgtitle,dims,definput,opts);
 subject_id = char(info(1));
 sensi_arm = char(info(2));
@@ -77,7 +77,7 @@ ixd_tms_pre_start = str2double(info(4));
 ixd_tms_pre_stop = str2double(info(5));
 ixd_tms_pst_start = str2double([info(6) info(8) info(10) info(12)]);
 ixd_tms_pst_stop = str2double([info(7) info(9) info(11) info(13)]);
-plot_opt_EMG = str2double(info(14));
+abs_thrshld = str2double(info(14));
 notes = str2double(info(15));
 block_num = 5;
 % store info in structure
@@ -188,8 +188,8 @@ for iblock = 1:block_num
     clear temp idx_date idx_ctrl idx_sensi idx_base
 end
 
-% define baseline window to check for baseline activity
-bsln_time_window = [-0.2 -0.01];
+% define baseline window to check for baseline activity 200 ms before TMS pulse
+bsln_time_window = [-0.2 0];
 bsln_sample_window = [1 round((abs(bsln_time_window(1))-abs(bsln_time_window(2)))*sr+1)];
 
 % First check: for baseline single trial EMG activity (RMS) per block
@@ -203,7 +203,7 @@ xval = -0.2:1/sr:0.5;
 disp(' ')
 disp('Iterative trial RMS for baseline above mean RMS')
 disp(' ')
-for iblock = 1:5
+for iblock = 1:block_num
 
     run_loop = 1;
     iloop = 1;
@@ -265,7 +265,7 @@ for iblock = 1:5
 end
 
 % store indices of discarded trials
-all_exclud = cell(5,1);
+all_exclud = cell(block_num,1);
 for iblock = 1:block_num
     for icleaning = 1:iloop
         all_exclud{iblock,1} = [all_exclud{iblock,1}, idx_exclud{iblock,icleaning}];
@@ -274,10 +274,9 @@ end
 
 % Second check: threshold on baseline RMS exceeding +/-15 µV
 % (as in Sulcova et al. BioRxiv 2022; Morozova et al. Sci Reports 2024)
-abs_thrshld = 15;
 idx_exclud{1,size(idx_exclud,2)+1} = [];
 
-for iblock = 1:5
+for iblock = 1:block_num
 
     idx_val = 1;
     idx_exc = 1;
@@ -304,7 +303,7 @@ for iblock = 1:size(idx_exclud,1)
 end
 
 % plot the discarded trials
-for iblock = 1:5
+for iblock = 1:block_num
     for itrial = 1:size(idx_exclud{iblock,end},1)
         f = figure('Color','w','Position',[0 0 1500 700]);
         figure(f);
@@ -334,7 +333,7 @@ for iblock = 1:block_num
 end
 
 % save the valid MEPs for each block
-for iblock = 1:size(valid_data,1)
+for iblock = 1:block_num
     clean_header{iblock,1} = block_header{iblock,1};
     clean_header{iblock,1}.name = strcat([clean_header{iblock,1}.name,' clean']);
     % discard events or trials from all_exclud
@@ -357,44 +356,130 @@ for iblock = 1:block_num
     clear out_datasets
 end
 
-% define MEP peak-to-peak amplitude criterion > 50 µV in specific window (s)
-mep_threshold = 50;
-response_window = round([0.205*sr+1 0.265*sr+1]);
-for iblock = 1:size(valid_data,1)
-    idx_bad = 1;
-    bad_mep{iblock,idx_bad} = [];
-    for itrial = 1:size(valid_data{iblock,2},1)
-        [max_p{iblock,itrial}, max_lat{iblock,itrial}] = max(valid_data{iblock,2}(itrial,response_window(1):response_window(2)));
-        [min_p{iblock,itrial}, min_lat{iblock,itrial}] = min(valid_data{iblock,2}(itrial,response_window(1):response_window(2)));
+% extract MEPs peak-to-peak amplitude in specific window between 10 ms and 50 ms after TMS
+response_window = round([0.210*sr+1 0.250*sr+1]);
+% do it for each trial type sorted file, first list them
+list_base = dir(fullfile(sub_pre_proc_folder,'*base *.mat'));
+list_sensi = dir(fullfile(sub_pre_proc_folder,'*sensi *.mat'));
+list_ctrl = dir(fullfile(sub_pre_proc_folder,'*ctrl *.mat'));
 
-        % check if time between positive and negative maxima is ok OR if MEP amplitude >= 50 µV
-        if abs(max_lat{iblock,itrial} - min_lat{iblock,itrial}) > round(0.015*sr,1) || (max_p{iblock,itrial} + abs(min_p{iblock,itrial})) < mep_threshold
-            bad_mep{iblock,1}(idx_bad,1) = itrial;
-            idx_bad = idx_bad+1;
+% for base trials
+base_idx_bad = 1;
+for ifile = 1:size(list_base,1)
+    [base_header{ifile,1}, base_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_base(ifile).name));
+    base_data{ifile,1} = squeeze(base_data{ifile,1});
+    for itrial = 1:size(base_data{ifile,1},1)
+        [base_max_p{ifile,itrial}, base_max_lat{ifile,itrial}] = max(base_data{ifile,1}(itrial,response_window(1):response_window(2)));
+        [base_min_p{ifile,itrial}, base_min_lat{ifile,itrial}] = min(base_data{ifile,1}(itrial,response_window(1):response_window(2)));
+
+        % check if time inteval between positive and negative maxima is ok
+        if abs(base_max_lat{ifile,itrial} - base_min_lat{ifile,itrial}) > round(0.015*sr,1)
+            base_bad_mep{ifile,1}(idx_bad,1) = itrial;
+            base_idx_bad = base_idx_bad+1;
+            disp(' ')
+            disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_base(ifile).name]));
+            disp(' ')
+            figure, plot(base_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(base_max_lat{ifile,itrial},base_max_p{ifile,itrial},'*r','MarkerSize',10)
+            plot(base_min_lat{ifile,itrial},base_min_p{ifile,itrial},'*r','MarkerSize',10)
+          
+        else
+        end
+    end
+end
+% for ctrl trials
+ctrl_idx_bad = 1;
+for ifile = 1:size(list_ctrl,1)
+    [ctrl_header{ifile,1}, ctrl_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_ctrl(ifile).name));
+    ctrl_data{ifile,1} = squeeze(ctrl_data{ifile,1});
+    for itrial = 1:size(ctrl_data{ifile,1},1)
+        [ctrl_max_p{ifile,itrial}, ctrl_max_lat{ifile,itrial}] = max(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2)));
+        [ctrl_min_p{ifile,itrial}, ctrl_min_lat{ifile,itrial}] = min(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2)));
+
+        % check if time inteval between positive and negative maxima is ok
+        if abs(ctrl_max_lat{ifile,itrial} - ctrl_min_lat{ifile,itrial}) > round(0.015*sr,1)
+            ctrl_bad_mep{ifile,1}(idx_bad,1) = itrial;
+            ctrl_idx_bad = ctrl_idx_bad+1;
+            disp(' ')
+            disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_ctrl(ifile).name]));
+            disp(' ')
+            figure, plot(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(ctrl_max_lat{ifile,itrial},ctrl_max_p{ifile,itrial},'*r','MarkerSize',10)
+            plot(ctrl_min_lat{ifile,itrial},ctrl_min_p{ifile,itrial},'*r','MarkerSize',10)
+            
+            % % % % if MEPs is not valid
+            % % %     % store index to then remove it variable to be saved in the MEP struct
+            % % % % else
+            % % %     % keep it
+            % % % % end
+
         else
         end
     end
 end
 
-% store MEPs amplitude
-for iblock = 1:size(valid_data,1)
-    for itrial = 1:size(valid_data{iblock,2},1)
-        if isempty(bad_mep{iblock,1})
-            mep_amp{iblock,1}(itrial,1) = (max_p{iblock,itrial} + abs(min_p{iblock,itrial}));
-            if max_lat{iblock,itrial} < min_lat{iblock,itrial}
-                mep_lat{iblock,1}(itrial,1) = max_lat{iblock,itrial};
-            else
-                mep_lat{iblock,1}(itrial,1) = min_lat{iblock,itrial};
-            end
-        elseif ~isempty(bad_mep{iblock,1})
-            
+% for sensi trials
+sensi_idx_bad = 1;
+for ifile = 1:size(list_sensi,1)
+    [sensi_header{ifile,1}, sensi_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_sensi(ifile).name));
+    sensi_data{ifile,1} = squeeze(sensi_data{ifile,1});
+    for itrial = 1:size(sensi_data{ifile,1},1)
+        [sensi_max_p{ifile,itrial}, sensi_max_lat{ifile,itrial}] = max(sensi_data{ifile,1}(itrial,response_window(1):response_window(2)));
+        [sensi_min_p{ifile,itrial}, sensi_min_lat{ifile,itrial}] = min(sensi_data{ifile,1}(itrial,response_window(1):response_window(2)));
 
+        % check if time inteval between positive and negative maxima is ok
+        if abs(sensi_max_lat{ifile,itrial} - sensi_min_lat{ifile,itrial}) > round(0.015*sr,1)
+            sensi_bad_mep{ifile,1}(idx_bad,1) = itrial;
+            sensi_idx_bad = sensi_idx_bad+1;
+            disp(' ')
+            disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_sensi(ifile).name]));
+            disp(' ')
+            figure, plot(sensi_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(sensi_max_lat{ifile,itrial},sensi_max_p{ifile,itrial},'*r','MarkerSize',10)
+            plot(sensi_min_lat{ifile,itrial},sensi_min_p{ifile,itrial},'*r','MarkerSize',10)
+        else
+        end
     end
 end
 
-% extract MEP latencies
+% store MEPs amplitudes
+MEP = struct;
+% for base trials
+for ifile = 1:size(list_base,1)
+    for itrial = 1:size(base_data{ifile,1},1)
+        MEP.base.amp{ifile,1}(itrial,1) = (abs(base_max_p{ifile,itrial}) + abs(base_min_p{ifile,itrial}));
+        if base_max_lat{ifile,itrial} < base_min_lat{ifile,itrial}
+            MEP.base.lat{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
+        else
+            MEP.base.lat{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
+        end
+    end
+end
 
+% for control trials
+for ifile = 1:size(list_ctrl,1)
+    for itrial = 1:size(ctrl_data{ifile,1},1)
+        MEP.ctrl.amp{ifile,1}(itrial,1) = (abs(ctrl_max_p{ifile,itrial}) + abs(ctrl_min_p{ifile,itrial}));
+        if ctrl_max_lat{ifile,itrial} < ctrl_min_lat{ifile,itrial}
+            MEP.ctrl.lat{ifile,1}(itrial,1) = (ctrl_max_lat{ifile,itrial}+10)/sr;
+        else
+            MEP.ctrl.lat{ifile,1}(itrial,1) = (ctrl_min_lat{ifile,itrial}+10)/sr;
+        end
+    end
+end
 
+% for sensisitized trials
+for ifile = 1:size(list_sensi,1)
+    for itrial = 1:size(sensi_data{ifile,1},1)
+        MEP.sensi.amp{ifile,1}(itrial,1) = (abs(sensi_max_p{ifile,itrial}) + abs(sensi_min_p{ifile,itrial}));
+        if sensi_max_lat{ifile,itrial} < sensi_min_lat{ifile,itrial}
+            MEP.sensi.lat{ifile,1}(itrial,1) = (sensi_max_lat{ifile,itrial}+10)/sr;
+        else
+            MEP.sensi.lat{ifile,1}(itrial,1) = (sensi_min_lat{ifile,itrial}+10)/sr;
+        end
+    end
+end
+% save number of discarded MEPs
+MEP.excludedPerBlock = all_exclud;
+
+save(fullfile(results_folder,strcat(savename,'_meps')),'MEP')
 
 
 end
