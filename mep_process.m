@@ -61,11 +61,11 @@ else
 end
 % dialog box
 prompt = {'\fontsize{12} Subject ID? :','\fontsize{12} Sensitized arm (L/R): ','\fontsize{12} Stimulated hemisphere (L/R):',...
-    '\fontsize{12} TMS PRE-CAPS BLK1 start index? : ','\fontsize{12} TMS PRE-CAPS BLK1 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLK2 start index? : ','\fontsize{12} TMS POST-CAPS BLK2 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLK3 start index? : ','\fontsize{12} TMS POST-CAPS BLK3 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLK4 start index? : ','\fontsize{12} TMS POST-CAPS BLK4 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLK5 start index? : ','\fontsize{12} TMS POST-CAPS BLK5 stop index? : ',...
+    '\fontsize{12} TMS PRE-CAPS BLOCK1 start index? : ','\fontsize{12} TMS PRE-CAPS BLOCK1 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLOCK2 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK2 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLOCK3 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK3 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLOCK4 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK4 stop index? : ',...
+    '\fontsize{12} TMS POST-CAPS BLOCK5 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK5 stop index? : ',...
     '\fontsize{12} Baseline RMS threshold (µV): ','\fontsize{12} Comments: ',};
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
@@ -343,7 +343,7 @@ end
 
 % merge the indices of all excluded trials
 for iblock = 1:block_num
-    all_exclud{iblock,1} = sort([all_exclud{iblock,1}; idx_exclud{iblock,end}]);
+    all_exclud{iblock,1} = [all_exclud{iblock,1}; idx_exclud{iblock,end}];
 end
 
 % save the valid MEPs for each block
@@ -462,14 +462,26 @@ end
 %% 8) Store and save MEPs amplitudes in a single .mat file
 
 MEP = struct;
+MEP.sub_info = sub_info;
 % for base trials
 for ifile = 1:size(list_base,1)
-    for itrial = 1:size(base_data{ifile,1},1)
-        MEP.base.amp{ifile,1}(itrial,1) = (abs(base_max_p{ifile,itrial}) + abs(base_min_p{ifile,itrial}));
-        if base_max_lat{ifile,itrial} < base_min_lat{ifile,itrial}
-            MEP.base.lat{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
-        else
-            MEP.base.lat{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
+    if contains(list_base(ifile).name,'BLK1')
+        for itrial = 1:size(base_data{ifile,1},1)
+            MEP.base.amp_PRE{ifile,1}(itrial,1) = (abs(base_max_p{ifile,itrial}) + abs(base_min_p{ifile,itrial}));
+            if base_max_lat{ifile,itrial} < base_min_lat{ifile,itrial}
+                MEP.base.lat_PRE{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
+            else
+                MEP.base.lat_PRE{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
+            end
+        end
+    else
+        for itrial = 1:size(base_data{ifile,1},1)
+            MEP.base.amp_PST{ifile,1}(itrial,1) = (abs(base_max_p{ifile,itrial}) + abs(base_min_p{ifile,itrial}));
+            if base_max_lat{ifile,itrial} < base_min_lat{ifile,itrial}
+                MEP.base.lat_PST{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
+            else
+                MEP.base.lat_PST{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
+            end
         end
     end
 end
@@ -477,11 +489,11 @@ end
 % for control trials
 for ifile = 1:size(list_ctrl,1)
     for itrial = 1:size(ctrl_data{ifile,1},1)
-        MEP.ctrl.amp{ifile,1}(itrial,1) = (abs(ctrl_max_p{ifile,itrial}) + abs(ctrl_min_p{ifile,itrial}));
+        MEP.ctrl.amp_PST{ifile,1}(itrial,1) = (abs(ctrl_max_p{ifile,itrial}) + abs(ctrl_min_p{ifile,itrial}));
         if ctrl_max_lat{ifile,itrial} < ctrl_min_lat{ifile,itrial}
-            MEP.ctrl.lat{ifile,1}(itrial,1) = (ctrl_max_lat{ifile,itrial}+10)/sr;
+            MEP.ctrl.lat_PST{ifile,1}(itrial,1) = (ctrl_max_lat{ifile,itrial}+10)/sr;
         else
-            MEP.ctrl.lat{ifile,1}(itrial,1) = (ctrl_min_lat{ifile,itrial}+10)/sr;
+            MEP.ctrl.lat_PST{ifile,1}(itrial,1) = (ctrl_min_lat{ifile,itrial}+10)/sr;
         end
     end
 end
@@ -489,68 +501,112 @@ end
 % for sensisitized trials
 for ifile = 1:size(list_sensi,1)
     for itrial = 1:size(sensi_data{ifile,1},1)
-        MEP.sensi.amp{ifile,1}(itrial,1) = (abs(sensi_max_p{ifile,itrial}) + abs(sensi_min_p{ifile,itrial}));
+        MEP.sensi.amp_PST{ifile,1}(itrial,1) = (abs(sensi_max_p{ifile,itrial}) + abs(sensi_min_p{ifile,itrial}));
         if sensi_max_lat{ifile,itrial} < sensi_min_lat{ifile,itrial}
-            MEP.sensi.lat{ifile,1}(itrial,1) = (sensi_max_lat{ifile,itrial}+10)/sr;
+            MEP.sensi.lat_PST{ifile,1}(itrial,1) = (sensi_max_lat{ifile,itrial}+10)/sr;
         else
-            MEP.sensi.lat{ifile,1}(itrial,1) = (sensi_min_lat{ifile,itrial}+10)/sr;
+            MEP.sensi.lat_PST{ifile,1}(itrial,1) = (sensi_min_lat{ifile,itrial}+10)/sr;
         end
     end
 end
-% save number of discarded MEPs
+
+
+% update and save number of discarded MEPs
+for ifile = 1:size(base_answ,1)
+    if ~isempty(base_answ{ifile,1})
+        MEP.base.warning_exclud = base_answ{ifile,1};
+    else
+        MEP.base.warning_exclud = [];
+    end
+end
+for ifile = 1:size(ctrl_answ,1)
+    if ~isempty(ctrl_answ{ifile,1})
+        MEP.ctrl.warning_exclud = ctrl_answ{ifile,1};
+    else
+        MEP.ctrl.warning_exclud = [];
+    end
+end
+for ifile = 1:size(sensi_answ,1)
+    if ~isempty(sensi_answ{ifile,1})
+        MEP.sensi.warning_exclud = sensi_answ{ifile,1};
+    else
+        MEP.sensi.warning_exclud = [];
+    end
+end
 MEP.excludedPerBlock = all_exclud;
+
 % save indices of suspicious MEPs
 MEP.base.warningMEP = base_bad_mep;
-MEP.base.warningMEP = ctrl_bad_mep;
-MEP.base.warningMEP = sensi_bad_mep;
+MEP.ctrl.warningMEP = ctrl_bad_mep;
+MEP.sensi.warningMEP = sensi_bad_mep;
+
 save(fullfile(sub_results_folder,strcat(savename,'_meps')),'MEP')
 
 
-%% 9) Concatenate MEPs amplitudes across blocks and exclude suspicious MEPs
-variable_names = {'base', 'ctrl', 'sensi'};
-temp_base = [];
-for ifile = 1:size(MEP.base.amp,1)
-    if ~isempty(base_answ{ifile,1})
-        MEP.base.amp{ifile,1}(base_bad_mep{ifile,1}) = [];
-        temp_base = [temp_base;MEP.base.amp{ifile,1}];
+%% 9) Exclude suspicious MEPs and concatenate MEPs amplitudes across PRE and POST capsaicin blocks 
+
+temp_base_PRE = [];
+temp_base_PST = [];
+for ifile = 1:size(list_base,1)
+    if contains(list_base(ifile).name,'BLK1')
+        if ~isempty(base_answ{ifile,1})
+            MEP.base.amp_PRE{ifile,1}(base_bad_mep{ifile,1}) = [];
+        else
+        end
+        temp_base_PRE = MEP.base.amp_PRE{ifile,1};
     else
-        temp_base = [temp_base;MEP.base.amp{ifile,1}];
+        if ~isempty(base_answ{ifile,1})
+            MEP.base.amp_PST{ifile,1}(base_bad_mep{ifile,1}) = [];
+        else
+        end
+        temp_base_PST = [temp_base_PST;MEP.base.amp_PST{ifile,1}];
     end
 end
 
-temp_ctrl = [];
-for ifile = 1:size(MEP.ctrl.amp,1)
+temp_ctrl_PST = [];
+for ifile = 1:size(list_ctrl,1)
     if ~isempty(ctrl_answ{ifile,1})
-        MEP.ctrl.amp{ifile,1}(ctrl_bad_mep{ifile,1}) = [];
-        temp_ctrl = [temp_ctrl;MEP.ctrl.amp{ifile,1}];
+        MEP.ctrl.amp_PST{ifile,1}(ctrl_bad_mep{ifile,1}) = [];
     else
-        temp_ctrl = [temp_ctrl;MEP.ctrl.amp{ifile,1}];
     end
+    temp_ctrl_PST = [temp_ctrl_PST;MEP.ctrl.amp_PST{ifile,1}];
 end
 
-temp_sensi = [];
-for ifile = 1:size(MEP.sensi.amp,1)
+temp_sensi_PST = [];
+for ifile = 1:size(list_sensi,1)
     if ~isempty(sensi_answ{ifile,1})
-        MEP.sensi.amp{ifile,1}(sensi_bad_mep{ifile,1}) = [];
-        temp_sensi = [temp_sensi;MEP.sensi.amp{ifile,1}];
+        MEP.sensi.amp_PST{ifile,1}(sensi_bad_mep{ifile,1}) = [];
     else
-        temp_sensi = [temp_sensi;MEP.sensi.amp{ifile,1}];
     end
+    temp_sensi_PST = [temp_sensi_PST;MEP.sensi.amp_PST{ifile,1}];
 end
+
+% save MEP structure
+save(fullfile(sub_results_folder,strcat(savename,'_meps')),'MEP')
 
 
 %% 10) Export the MEPs amplitude data for the current subject per trial type in .csv files
+
 % baseline
-base_table = array2table(temp_base,'VariableNames',{'base_amp'});
+[max_size, idx_max] = max([size(temp_base_PRE,1) size(temp_base_PST,1)]);
+if idx_max == 1
+    temp_base_PST(end+1:max_size,1) = NaN;
+elseif idx_max == 2
+    temp_base_PRE(end+1:max_size,1) = NaN;
+end
+base_table = array2table([temp_base_PRE,temp_base_PST],'VariableNames',{'base_amp_PRE','base_amp_PST'});
 base_csv_name = strcat(savename,'_meps_base.csv');
 writetable(base_table,fullfile(sub_results_folder,base_csv_name),'Delimiter', ',')
+
 % WASP control
-ctrl_table = array2table(temp_ctrl,'VariableNames',{'ctrl_amp'});
+ctrl_table = array2table(temp_ctrl_PST,'VariableNames',{'ctrl_amp_PST'});
 ctrl_csv_name = strcat(savename,'_meps_ctrl.csv');
 writetable(ctrl_table,fullfile(sub_results_folder,ctrl_csv_name),'Delimiter', ',')
+
 % WASP sensitized
-sensi_table = array2table(temp_sensi,'VariableNames',{'sensi_amp'});
+sensi_table = array2table(temp_sensi_PST,'VariableNames',{'sensi_amp_PST'});
 sensi_csv_name = strcat(savename,'_meps_sensi.csv');
 writetable(sensi_table,fullfile(sub_results_folder,sensi_csv_name),'Delimiter', ',')
+
 
 end
