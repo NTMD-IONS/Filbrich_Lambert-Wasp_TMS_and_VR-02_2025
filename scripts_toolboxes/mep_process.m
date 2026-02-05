@@ -1,26 +1,27 @@
-% function to process MEPs and rename trials based on VR txt files
-% it also extracts MEPs amplitudes and latencies for each block.
-% 
-% Folder and subject names naming are build whatever names are encoded in
-% the VR software
-% sub-00$
-% main_folder contains the raw_data folder, pre-processed data folder,
-% results folder, scripts folder (with toolboxes)
-% 
-% Block 1 (BLK1) is the pre-HFS block
-% Block 2 to 5 (BLK2 to BLK5) are the post-HFS blocks
-% 
-% 
-% 
-% 
+% Function to process MEPs and rename trials based on VR txt files.
+% It also extracts MEPs amplitudes and latencies for each block.
+% Developed for Lieve Filbrich experiment : using virtual reality, TMS
+% during sensitization using capsaicin.
 %
+% Folder and subject naming are build whatever names are encoded in
+% the VR software: i.e., sub-00$
+% 
+% The main_folder must contain:
+%   - raw_data folder (must contain all participants data folders),
+%   - pre-processed data folder (created by the function, to save letswave data files)
+%   - results folder  (created by the function, to save .mat MEP structure and .csv files)
+%   - scripts_toolboxes folder (with function and toolboxes)
+% 
+% BLOCK 1 (BLK1) is the PRE capsaicin block
+% BLOCKS 2 to 5 (BLK2 to BLK5) are the POST capsaicin blocks
+% 
 %
 % Required toolboxes:
 %   natsortfiles (2022, Stephen Cobeldick)
-%   letswave 6
+%   letswave6
 % 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-% Cédric Lenoir, NeTMeD, IoNS, UCLouvain, January 2026
+% Cédric Lenoir, NeTMeD, IoNS, UCLouvain, February 2026
 
 function mep_process
 
@@ -28,13 +29,12 @@ function mep_process
 
 % set the paths and initialize letswave
 % Select the general data folder which contains all subjects folders
-main_folder = uigetdir('C:\','Select main folder');
+main_folder = uigetdir('C:\','Select the main folder');
 cd(main_folder)
 raw_data_folder = fullfile(main_folder,'raw_data');
 results_folder = fullfile(main_folder,'results');
 pre_proc_folder = fullfile(main_folder,'pre-processed');
 
-if ~isfolder(raw_data_folder); mkdir(raw_data_folder); end
 if ~isfolder(results_folder); mkdir(results_folder); end
 if ~isfolder(pre_proc_folder); mkdir(pre_proc_folder); end
 
@@ -42,30 +42,16 @@ addpath(genpath(main_folder))
 close all hidden
 
 % initialize letswave 6
-% check if lw is already on the path if not select the folder of the toolobx
-if contains(path, 'C:\Users\cedlenoir\Documents\MATLAB\letswave6-master')
-    letswave();
-    clc
-else
-    lw_path = uigetdir('C:\Users\cedlenoir\Documents\MATLAB','Select Letswave 6 folder');
-    addpath(genpath(lw_path))
-    letswave();
-    clc
-end
-% check if natsorfiles toolbox is on the path
-if contains(path, 'C:\Users\cedlenoir\Documents\MATLAB\natsortfiles')
-else
-    natsortfiles_path = uigetdir('C:\Users\cedlenoir\Documents\MATLAB','Select natsortfiles folder');
-    addpath(genpath(natsortfiles_path))
-    clc
-end
+letswave()
+clc
+
 % dialog box
 prompt = {'\fontsize{12} Subject ID? :','\fontsize{12} Sensitized arm (L/R): ','\fontsize{12} Stimulated hemisphere (L/R):',...
-    '\fontsize{12} TMS PRE-CAPS BLOCK1 start index? : ','\fontsize{12} TMS PRE-CAPS BLOCK1 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLOCK2 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK2 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLOCK3 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK3 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLOCK4 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK4 stop index? : ',...
-    '\fontsize{12} TMS POST-CAPS BLOCK5 start index? : ','\fontsize{12} TMS POST-CAPS BLOCK5 stop index? : ',...
+    '\fontsize{12} PRE-CAPSAICIN BLOCK1 TMS start index? : ','\fontsize{12} PRE-CAPSAICIN BLOCK1 TMS stop index? : ',...
+    '\fontsize{12} POST-CAPSAICIN BLOCK2 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK2 TMS stop index? : ',...
+    '\fontsize{12} POST-CAPSAICIN BLOCK3 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK3 TMS stop index? : ',...
+    '\fontsize{12} POST-CAPSAICIN BLOCK4 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK4 TMS stop index? : ',...
+    '\fontsize{12} POST-CAPSAICIN BLOCK5 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK5 TMS stop index? : ',...
     '\fontsize{12} Baseline RMS threshold (µV): ','\fontsize{12} Comments: ',};
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
@@ -82,6 +68,15 @@ ixd_tms_pst_stop = str2double([info(7) info(9) info(11) info(13)]);
 abs_thrshld = str2double(info(14));
 notes = str2double(info(15));
 block_num = 5;
+
+% check if the number of blocks is 5 and that we have TMS indices for each block
+if sum(isnan([ixd_tms_pre_start ixd_tms_pre_stop ixd_tms_pst_start ixd_tms_pst_stop])) ~= 0
+    disp('At least 1 TMS index or BLOCK is missing ! Check.')
+    close all hidden
+    return
+else
+end
+
 % store info in structure
 sub_info = struct;
 sub_info.sub_ID = subject_id;
@@ -607,6 +602,5 @@ writetable(ctrl_table,fullfile(sub_results_folder,ctrl_csv_name),'Delimiter', ',
 sensi_table = array2table(temp_sensi_PST,'VariableNames',{'sensi_amp_PST'});
 sensi_csv_name = strcat(savename,'_meps_sensi.csv');
 writetable(sensi_table,fullfile(sub_results_folder,sensi_csv_name),'Delimiter', ',')
-
 
 end
