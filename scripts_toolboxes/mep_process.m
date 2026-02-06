@@ -46,27 +46,50 @@ letswave()
 clc
 
 % dialog box
-prompt = {'\fontsize{12} Subject ID? :','\fontsize{12} Sensitized arm (L/R): ','\fontsize{12} Stimulated hemisphere (L/R):',...
+prompt = {'\fontsize{12} Subject ID (3 digits, i.e.,:001)? :','\fontsize{12} Group? 0->CONTROL / 1->CAPSAICIN :',...
+    '\fontsize{12} Sensitized arm (L/R): ','\fontsize{12} Stimulated hemisphere (L/R):',...
     '\fontsize{12} PRE-CAPSAICIN BLOCK1 TMS start index? : ','\fontsize{12} PRE-CAPSAICIN BLOCK1 TMS stop index? : ',...
     '\fontsize{12} POST-CAPSAICIN BLOCK2 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK2 TMS stop index? : ',...
     '\fontsize{12} POST-CAPSAICIN BLOCK3 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK3 TMS stop index? : ',...
     '\fontsize{12} POST-CAPSAICIN BLOCK4 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK4 TMS stop index? : ',...
     '\fontsize{12} POST-CAPSAICIN BLOCK5 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK5 TMS stop index? : ',...
-    '\fontsize{12} Baseline RMS threshold (µV): ','\fontsize{12} Comments: ',};
+    '\fontsize{12} Baseline RMS threshold (µV): ','\fontsize{12} Index of TMS event to exclude (comma separated): ',};
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
-dims = repmat([1 80],15,1);
-definput = {'002','R','L','114','137','138','164','165','192','193','220','221','246','15',''};
+dims = repmat([1 80],16,1);
+definput = {'001','1','R','L','114','137','138','164','165','192','193','220','221','246','15',''};
 info = inputdlg(prompt,dlgtitle,dims,definput,opts);
-subject_id = char(info(1));
-sensi_arm = char(info(2));
-stim_hemi = char(info(3));
-ixd_tms_pre_start = str2double(info(4));
-ixd_tms_pre_stop = str2double(info(5));
-ixd_tms_pst_start = str2double([info(6) info(8) info(10) info(12)]);
-ixd_tms_pst_stop = str2double([info(7) info(9) info(11) info(13)]);
-abs_thrshld = str2double(info(14));
-notes = str2double(info(15));
+% make sure that subject ID number is 3 digits
+if size(char(info(1)),2) == 3
+    subject_id = char(info(1));
+else
+    subject_id = sprintf('%.3d',str2double(info(1)));
+end
+group_cond = str2double(info(2));
+if group_cond == 0
+    group_str = 'ctrl';
+elseif group_cond == 1
+    group_str = 'caps';
+else
+    disp('Group is not correct! try again')
+end
+sensi_arm = char(info(3));
+stim_hemi = char(info(4));
+ixd_tms_pre_start = str2double(info(5));
+ixd_tms_pre_stop = str2double(info(6));
+ixd_tms_pst_start = str2double([info(7) info(9) info(11) info(13)]);
+ixd_tms_pst_stop = str2double([info(8) info(10) info(12) info(14)]);
+abs_thrshld = str2double(info(15));
+tms_bad = char(info(16));
+if ~isempty(tms_bad)
+    tms_bad = regexp(tms_bad, '\d+', 'match');
+    for ibad = 1:size(tms_bad,2)
+        tms_idx_bad(ibad,1) = str2double(tms_bad{1,ibad});
+    end
+else
+    tms_idx_bad = [];
+end
+
 block_num = 5;
 
 % check if the number of blocks is 5 and that we have TMS indices for each block
@@ -80,17 +103,18 @@ end
 % store info in structure
 sub_info = struct;
 sub_info.sub_ID = subject_id;
+sub_info.group = group_str;
 sub_info.sensitized_arm = sensi_arm;
 sub_info.stimulated_hemisph = stim_hemi;
 sub_info.TMS_triggers.pre = [ixd_tms_pre_start;ixd_tms_pre_stop];
 sub_info.TMS_triggers.pst = [ixd_tms_pst_start;ixd_tms_pst_stop];
-sub_info.comments = notes;
+sub_info.bad_TMS = tms_bad;
 
 % folder name of Visor EMG data
-gen_subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id));
-subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id),'Sessions');
-sub_pre_proc_folder = fullfile(pre_proc_folder,sprintf('sub-%s',subject_id));
-sub_results_folder = fullfile(results_folder,sprintf('sub-%s',subject_id));
+gen_subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id,'_group-',group_str));
+subject_folder = fullfile(raw_data_folder,strcat('sub-',subject_id,'_group-',group_str),'Sessions');
+sub_pre_proc_folder = fullfile(pre_proc_folder,sprintf('sub-%s_group-%s',subject_id,group_str));
+sub_results_folder = fullfile(results_folder,sprintf('sub-%s_group-%s',subject_id,group_str));
 if ~isfolder(sub_pre_proc_folder); mkdir(sub_pre_proc_folder); end
 if ~isfolder(sub_results_folder); mkdir(sub_results_folder); end
 
@@ -99,12 +123,12 @@ session_list = dir(subject_folder);
 session_list = session_list(~ismember({session_list.name}, {'.', '..'}));
 
 % list EMG CNT files
-file_list = dir(fullfile(session_list.folder,session_list.name,'*emg.cnt*'));
+file_list = dir(fullfile(session_list(end).folder,session_list(end).name,'*emg.cnt*'));
 
 % import CNT file
 [out_data,~] = RLW_import_CNT(fullfile(session_list.folder,session_list.name,file_list.name));
 filename = file_list.name(1:end-8);
-savename = strcat('sub-',subject_id,'_',filename);
+savename = strcat('sub-',subject_id,'_group-',group_str,'_',filename);
 out_data.header.name = savename;
 CLW_save(sub_pre_proc_folder,out_data.header,out_data.data);
 clear out_data
@@ -135,16 +159,18 @@ CLW_save(sub_pre_proc_folder,seg_header, seg_data);
 
 %% 3) Remove irrelevant TMS events
 
-% keep TMS events after rMT
+% keep TMS events after rMT and remove bad TMS events if there are any
 % arrange epochs of valid TMS triggers for each TMS block
 valid_tms_idx = cell(block_num,1);
 for iblock = 1:block_num
     if iblock == 1
-        valid_tms_idx{iblock,1} = (ixd_tms_pre_start:ixd_tms_pre_stop);
+        valid_tms_idx{iblock,1} = setdiff((ixd_tms_pre_start:ixd_tms_pre_stop),tms_idx_bad);
     else
-        valid_tms_idx{iblock,1} = (ixd_tms_pst_start(iblock-1):ixd_tms_pst_stop(iblock-1));
+        valid_tms_idx{iblock,1} = setdiff((ixd_tms_pst_start(iblock-1):ixd_tms_pst_stop(iblock-1)),tms_idx_bad);
     end
 end
+
+% save valid epochs in separate lw files for each block
 for iblock = 1:block_num
     [block_header{iblock,1}, block_data{iblock,1}] = RLW_arrange_epochs(seg_header, seg_data,valid_tms_idx{iblock,1});
     block_header{iblock,1}.name = strcat(seg_header.name,' BLK ',num2str(iblock));
