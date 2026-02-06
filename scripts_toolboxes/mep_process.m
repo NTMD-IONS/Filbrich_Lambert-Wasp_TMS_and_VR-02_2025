@@ -3,11 +3,16 @@
 % Developed for Lieve Filbrich experiment : using virtual reality, TMS
 % during sensitization using capsaicin.
 %
-% Folder and subject naming are build whatever names are encoded in
-% the VR software: i.e., sub-00$
+% Folder and subject naming must be:
+% i.e.: sub-00$_group-ctrl or sub-00$_group-caps
 % 
 % The main_folder must contain:
 %   - raw_data folder (must contain all participants data folders),
+%       - the subject folder must contain:
+%               - 'MRI' folder
+%               - 'Sessions' folder
+%               - the files from unity (.txt, .meta, .csv)
+%
 %   - pre-processed data folder (created by the function, to save letswave data files)
 %   - results folder  (created by the function, to save .mat MEP structure and .csv files)
 %   - scripts_toolboxes folder (with function and toolboxes)
