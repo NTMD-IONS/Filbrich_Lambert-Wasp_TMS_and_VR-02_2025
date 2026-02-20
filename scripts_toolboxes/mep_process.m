@@ -148,7 +148,7 @@ sr = 1/header.xstep;
 
 % high pass filter Butterworth 4 Hz; order 4
 low_cutoff = 4;
-order = 4;
+order = 2;
 [filt_header, filt_data] = RLW_butterworth_filter(dc_header,dc_data,'filter_type','highpass','low_cutoff',low_cutoff,'filter_order',order);
 
 % segmentation
@@ -287,7 +287,7 @@ for iblock = 1:block_num
                 ax.YLim = [-200 200];
                 ax.Box = 'off';
                 title({'First check iterative RMS'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,iloop}(end)),' in block ',num2str(iblock)])})
-                pause()
+                % pause()
                 close (f)
             end
         end
@@ -308,7 +308,7 @@ end
 all_exclud = cell(block_num,1);
 for iblock = 1:block_num
     for icleaning = 1:iloop
-        all_exclud{iblock,1} = [all_exclud{iblock,1}, idx_exclud{iblock,icleaning}];
+        all_exclud{iblock,1} = [all_exclud{iblock,1}; idx_exclud{iblock,icleaning}];
     end
 end
 
@@ -362,7 +362,7 @@ for iblock = 1:block_num
         ax.YLim = [-200 200];
         ax.Box = 'off';
         title({'Second check RMS threshold'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,end}(itrial,1)),' in block ',num2str(iblock)])})
-        pause()
+        % pause()
         close(f)
     end
 end
@@ -379,9 +379,9 @@ for iblock = 1:block_num
     % discard events or trials from all_exclud
     clean_header{iblock,1}.events(all_exclud{iblock,1}) = [];
     % fix epochs numbering
-for ievent = 1:size(clean_header{iblock,1}.events,2)
-    clean_header{iblock,1}.events(ievent).epoch = ievent;
-end
+    for ievent = 1:size(clean_header{iblock,1}.events,2)
+        clean_header{iblock,1}.events(ievent).epoch = ievent;
+    end
     clean_data{iblock,1}(:,1,1,1,1,:) = valid_data{iblock,2};
     clean_header{iblock,1}.datasize = size(clean_data{iblock,1});
     CLW_save(sub_pre_proc_folder,clean_header{iblock,1},clean_data{iblock,1});
