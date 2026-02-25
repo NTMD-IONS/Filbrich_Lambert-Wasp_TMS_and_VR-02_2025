@@ -62,7 +62,7 @@ prompt = {'\fontsize{12} Subject ID (3 digits, i.e.,:001)? :','\fontsize{12} Gro
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
 dims = repmat([1 80],16,1);
-definput = {'001','1','R','L','114','137','138','164','165','192','193','220','221','246','15',''};
+definput = {'000','','','','','','','','','','','','','','20',''};
 info = inputdlg(prompt,dlgtitle,dims,definput,opts);
 % make sure that subject ID number is 3 digits
 if size(char(info(1)),2) == 3
@@ -146,8 +146,8 @@ sr = 1/header.xstep;
 % DC removal
 [dc_header, dc_data] = RLW_dc_removal(header,data,'linear_detrend',0);
 
-% high pass filter Butterworth 4 Hz; order 4
-low_cutoff = 4;
+% high pass filter Butterworth 1 Hz; order 2 (Groppa et al. CLINPH 2012)
+low_cutoff = 1;
 order = 2;
 [filt_header, filt_data] = RLW_butterworth_filter(dc_header,dc_data,'filter_type','highpass','low_cutoff',low_cutoff,'filter_order',order);
 
@@ -228,8 +228,9 @@ end
 
 %% 5) Discard MEPs if baseline activity
 
-% define baseline window to check for baseline activity 200 ms before TMS pulse
-bsln_time_window = [-0.2 0];
+% define baseline window to check for baseline activity [from -100 to - 5
+% ms] before TMS pulse ()
+bsln_time_window = [-0.1 -0.005];
 bsln_sample_window = [1 round((abs(bsln_time_window(1))-abs(bsln_time_window(2)))*sr+1)];
 
 % First check: for baseline single trial EMG activity (RMS) per block
@@ -259,7 +260,7 @@ for iblock = 1:block_num
         % threshold mean RMS +/- 2.5*SD (permissive)
         avg_bsln_rms(iblock,iloop) = mean(bsln_rms{iblock,1});
         sd_bsln_rms(iblock,iloop) = std(bsln_rms{iblock,1});
-        thrshld(iblock,iloop) = avg_bsln_rms(iblock,iloop)+2.5*sd_bsln_rms(iblock,iloop);
+        thrshld(iblock,iloop) = avg_bsln_rms(iblock,iloop)+3*sd_bsln_rms(iblock,iloop);
 
         idx_val = 1;
         idx_exc = 1;
@@ -287,7 +288,7 @@ for iblock = 1:block_num
                 ax.YLim = [-200 200];
                 ax.Box = 'off';
                 title({'First check iterative RMS'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,iloop}(end)),' in block ',num2str(iblock)])})
-                % pause()
+                pause()
                 close (f)
             end
         end
@@ -304,15 +305,15 @@ for iblock = 1:block_num
     end
 end
 
-% store indices of discarded trials
-all_exclud = cell(block_num,1);
-for iblock = 1:block_num
-    for icleaning = 1:iloop
-        all_exclud{iblock,1} = [all_exclud{iblock,1}; idx_exclud{iblock,icleaning}];
-    end
-end
+% % store indices of discarded trials
+% all_exclud = cell(block_num,1);
+% for iblock = 1:block_num
+%     for icleaning = 1:iloop
+%         all_exclud{iblock,1} = [all_exclud{iblock,1}; idx_exclud{iblock,icleaning}];
+%     end
+% end
 
-% Second check: threshold on baseline RMS exceeding +/-15 µV
+% Second check: threshold on baseline RMS exceeding +/-20 µV (rather than 15 µV due to line noise) 
 % (as in Sulcova et al. BioRxiv 2022; Morozova et al. Sci Reports 2024)
 idx_exclud{1,size(idx_exclud,2)+1} = [];
 
@@ -362,14 +363,17 @@ for iblock = 1:block_num
         ax.YLim = [-200 200];
         ax.Box = 'off';
         title({'Second check RMS threshold'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,end}(itrial,1)),' in block ',num2str(iblock)])})
-        % pause()
+        pause()
         close(f)
     end
 end
 
 % merge the indices of all excluded trials
+total_exclud = cell(5,1);
 for iblock = 1:block_num
-    all_exclud{iblock,1} = [all_exclud{iblock,1}; idx_exclud{iblock,end}];
+    for istep = 1:size(idx_exclud,2)
+        total_exclud{iblock,1} = [total_exclud{iblock,1}; idx_exclud{iblock,istep}];
+    end
 end
 
 % save the valid MEPs for each block
@@ -377,7 +381,7 @@ for iblock = 1:block_num
     clean_header{iblock,1} = block_header{iblock,1};
     clean_header{iblock,1}.name = strcat([clean_header{iblock,1}.name,' clean']);
     % discard events or trials from all_exclud
-    clean_header{iblock,1}.events(all_exclud{iblock,1}) = [];
+    clean_header{iblock,1}.events(total_exclud{iblock,1}) = [];
     % fix epochs numbering
     for ievent = 1:size(clean_header{iblock,1}.events,2)
         clean_header{iblock,1}.events(ievent).epoch = ievent;
@@ -540,31 +544,31 @@ end
 % update and save number of discarded MEPs
 for ifile = 1:size(base_answ,1)
     if ~isempty(base_answ{ifile,1})
-        MEP.base.warning_exclud = base_answ{ifile,1};
+        MEP.base.exclud_P2P = base_answ{ifile,1};
     else
-        MEP.base.warning_exclud = [];
+        MEP.base.exclud_P2P = [];
     end
 end
 for ifile = 1:size(ctrl_answ,1)
     if ~isempty(ctrl_answ{ifile,1})
-        MEP.ctrl.warning_exclud = ctrl_answ{ifile,1};
+        MEP.ctrl.exclud_P2P = ctrl_answ{ifile,1};
     else
-        MEP.ctrl.warning_exclud = [];
+        MEP.ctrl.exclud_P2P = [];
     end
 end
 for ifile = 1:size(sensi_answ,1)
     if ~isempty(sensi_answ{ifile,1})
-        MEP.sensi.warning_exclud = sensi_answ{ifile,1};
+        MEP.sensi.exclud_P2P = sensi_answ{ifile,1};
     else
-        MEP.sensi.warning_exclud = [];
+        MEP.sensi.exclud_P2P = [];
     end
 end
-MEP.excludedPerBlock = all_exclud;
+MEP.excludedPerBlock = total_exclud;
 
 % save indices of suspicious MEPs
-MEP.base.warningMEP = base_bad_mep;
-MEP.ctrl.warningMEP = ctrl_bad_mep;
-MEP.sensi.warningMEP = sensi_bad_mep;
+MEP.base.Idx_exclud_P2P = base_bad_mep;
+MEP.ctrl.Idx_exclud_P2P = ctrl_bad_mep;
+MEP.sensi.Idx_exclud_P2P = sensi_bad_mep;
 
 save(fullfile(sub_results_folder,strcat(savename,'_meps')),'MEP')
 
