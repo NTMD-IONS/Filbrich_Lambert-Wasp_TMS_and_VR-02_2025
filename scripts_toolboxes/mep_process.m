@@ -96,6 +96,7 @@ else
 end
 
 block_num = 5;
+trial_num = 30;
 
 % check if the number of blocks is 5 and that we have TMS indices for each block
 if sum(isnan([ixd_tms_pre_start ixd_tms_pre_stop ixd_tms_pst_start ixd_tms_pst_stop])) ~= 0
@@ -173,6 +174,34 @@ for iblock = 1:block_num
     else
         valid_tms_idx{iblock,1} = setdiff((ixd_tms_pst_start(iblock-1):ixd_tms_pst_stop(iblock-1)),tms_idx_bad);
     end
+end
+
+% check the number of TMS trigger per block and their latencies
+for iblock = 1:block_num
+    num_TMS_BLK(iblock,1) = size(valid_tms_idx{iblock,1},2);
+    if num_TMS_BLK(iblock,1) > trial_num
+        % check the timelaps between successive triggers
+        ilat = 1;
+        for itrig = 1:num_TMS_BLK1 %size(header.events,2)
+            if strcmp(header.events(ixd_tms_pre_start+itrig-1).code,'1')
+                temp_trig_lat(ilat,1) = header.events(ixd_tms_pre_stop+itrig-1).latency;
+                ilat = ilat+1;
+            else
+            end
+        end
+        timelaps_BLK1 = diff(temp_trig_lat);
+        exclud_laps = [];
+        for ilaps = 1:length(timelaps_BLK1)
+            if timelaps_BLK1(ilaps) < 5.5
+                exclud_laps = [exclud_laps ilaps];
+            else
+            end
+        end
+    else
+    end
+    exclud_laps = [exclud_laps exclud_laps+1];
+
+
 end
 
 % save valid epochs in separate lw files for each block
