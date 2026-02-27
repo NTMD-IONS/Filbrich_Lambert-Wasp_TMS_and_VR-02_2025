@@ -58,11 +58,12 @@ prompt = {'\fontsize{12} Subject ID (3 digits, i.e.,:001)? :','\fontsize{12} Gro
     '\fontsize{12} POST-CAPSAICIN BLOCK3 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK3 TMS stop index? : ',...
     '\fontsize{12} POST-CAPSAICIN BLOCK4 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK4 TMS stop index? : ',...
     '\fontsize{12} POST-CAPSAICIN BLOCK5 TMS start index? : ','\fontsize{12} POST-CAPSAICIN BLOCK5 TMS stop index? : ',...
-    '\fontsize{12} Baseline RMS threshold (µV): ','\fontsize{12} Index of TMS event to exclude (comma separated): ',};
+    '\fontsize{12} Index of TMS event to exclude (comma separated): ','\fontsize{12} Baseline RMS threshold (µV): ',...
+    '\fontsize{12} EMG blocks in 2 cnt files? 0->NO / 1->YES: '};
 dlgtitle = 'LOAD SUBJECT DATA';
 opts.Interpreter = 'tex';
-dims = repmat([1 80],16,1);
-definput = {'000','','','','','','','','','','','','','','20',''};
+dims = repmat([1 80],17,1);
+definput = {'000','','','','','','','','','','','','','','','20','0'};
 info = inputdlg(prompt,dlgtitle,dims,definput,opts);
 % make sure that subject ID number is 3 digits
 if size(char(info(1)),2) == 3
@@ -84,8 +85,7 @@ ixd_tms_pre_start = str2double(info(5));
 ixd_tms_pre_stop = str2double(info(6));
 ixd_tms_pst_start = str2double([info(7) info(9) info(11) info(13)]);
 ixd_tms_pst_stop = str2double([info(8) info(10) info(12) info(14)]);
-abs_thrshld = str2double(info(15));
-tms_bad = char(info(16));
+tms_bad = char(info(15));
 if ~isempty(tms_bad)
     tms_bad = regexp(tms_bad, '\d+', 'match');
     for ibad = 1:size(tms_bad,2)
@@ -94,17 +94,8 @@ if ~isempty(tms_bad)
 else
     tms_idx_bad = [];
 end
-
-block_num = 5;
-trial_num = 30;
-
-% check if the number of blocks is 5 and that we have TMS indices for each block
-if sum(isnan([ixd_tms_pre_start ixd_tms_pre_stop ixd_tms_pst_start ixd_tms_pst_stop])) ~= 0
-    disp('At least 1 TMS index or BLOCK is missing ! Check.')
-    close all hidden
-    return
-else
-end
+abs_thrshld = str2double(info(16));
+num_cnt = str2double(info(17));
 
 % store info in structure
 sub_info = struct;
@@ -112,8 +103,8 @@ sub_info.sub_ID = subject_id;
 sub_info.group = group_str;
 sub_info.sensitized_arm = sensi_arm;
 sub_info.stimulated_hemisph = stim_hemi;
-sub_info.TMS_triggers.pre = [ixd_tms_pre_start;ixd_tms_pre_stop];
-sub_info.TMS_triggers.pst = [ixd_tms_pst_start;ixd_tms_pst_stop];
+sub_info.TMS_triggers.start = [ixd_tms_pre_start, ixd_tms_pst_start];
+sub_info.TMS_triggers.stop = [ixd_tms_pre_stop, ixd_tms_pst_stop];
 sub_info.bad_TMS = tms_bad;
 
 % folder name of Visor EMG data
@@ -124,22 +115,73 @@ sub_results_folder = fullfile(results_folder,sprintf('sub-%s_group-%s',subject_i
 if ~isfolder(sub_pre_proc_folder); mkdir(sub_pre_proc_folder); end
 if ~isfolder(sub_results_folder); mkdir(sub_results_folder); end
 
+% check if the number of blocks is 5 and that we have TMS indices for each block
+block_num = 5;
+txt_files = dir(fullfile(gen_subject_folder,'*TMSSensitized*.csv'));
+if sum(isnan([ixd_tms_pre_start ixd_tms_pre_stop ixd_tms_pst_start ixd_tms_pst_stop])) ~= 0
+    disp('At least 1 TMS index is missing ! Check.')
+    close all hidden
+    return
+elseif size(txt_files,1) ~= block_num
+    disp('At least 1 BLOCK is missing ! Check.')
+    close all hidden
+    return
+else
+end
+
+% check the number of trial per block based on the .csv file of Unity
+for ifile = 1:size(txt_files,1)
+    idx_date = strfind(txt_files(ifile).name,'TMSSensitized_');
+    txt_date_files{ifile,1} = txt_files(ifile).name(idx_date:end);
+end
+% sort files by date and time
+[~, idx, ~] = natsort(txt_date_files,'\d+');
+% store the number of trials ber block
+for iblock = 1:block_num
+    temp = readtable(fullfile(gen_subject_folder,txt_files(idx(iblock)).name));
+    trial_num(iblock,1) = size(temp,1);
+end
+
+% adjust trial_num if there were tms_idx_bad (indices of TMS pulses to be discarded)
+blk_prob = [];
+blk_idx = [];
+if ~isempty(tms_idx_bad)
+    % find in which block
+    for i_bad = 1:size(tms_idx_bad,1)
+        blk_prob{i_bad,1} = find(tms_idx_bad(i_bad)>sub_info.TMS_triggers.start);
+        blk_idx(i_bad,1) = size(blk_prob{i_bad,1},2);
+        trial_num(blk_idx(i_bad,1),1) = trial_num(blk_idx(i_bad,1),1)-1;
+    end
+end
+
 % list sessions
 session_list = dir(subject_folder);
 session_list = session_list(~ismember({session_list.name}, {'.', '..'}));
 
-% list EMG CNT files
-file_list = dir(fullfile(session_list(end).folder,session_list(end).name,'*emg.cnt*'));
-
-% import CNT file
-[out_data,~] = RLW_import_CNT(fullfile(session_list.folder,session_list.name,file_list.name));
-filename = file_list.name(1:end-8);
-savename = strcat('sub-',subject_id,'_group-',group_str,'_',filename);
-out_data.header.name = savename;
-CLW_save(sub_pre_proc_folder,out_data.header,out_data.data);
-clear out_data
-[header, data] = CLW_load(fullfile(sub_pre_proc_folder,savename));
-sr = 1/header.xstep;
+% Selection import if 1 cnt file or 2
+if num_cnt == 0
+    % list EMG CNT files
+    file_list = dir(fullfile(session_list(end).folder,session_list(end).name,'*emg.cnt*'));
+    % import CNT file
+    [out_data,~] = RLW_import_CNT(fullfile(session_list.folder,session_list.name,file_list.name));
+    filename = file_list.name(1:end-8);
+    savename = strcat('sub-',subject_id,'_group-',group_str,'_',filename);
+    out_data.header.name = savename;
+    CLW_save(sub_pre_proc_folder,out_data.header,out_data.data);
+    clear out_data
+    [header, data] = CLW_load(fullfile(sub_pre_proc_folder,savename));
+    sr = 1/header.xstep;
+elseif num_cnt == 1
+    % find the lw concatenated file
+    lw_concat_file = dir(fullfile(session_list(1).folder,session_list(1).name,'*concat*.mat'));
+    % load
+    [header, data] = CLW_load(fullfile(lw_concat_file.folder,lw_concat_file.name));
+    savename = strcat('sub-',subject_id,'_group-',group_str,'_',lw_concat_file.name(8:end-8));
+    header.name = savename;
+    % save with regular filename
+    CLW_save(sub_pre_proc_folder,header,data);
+    sr = 1/header.xstep;
+end
 
 
 %% 2) Pre-processing steps in letswave
@@ -169,39 +211,31 @@ CLW_save(sub_pre_proc_folder,seg_header, seg_data);
 % arrange epochs of valid TMS triggers for each TMS block
 valid_tms_idx = cell(block_num,1);
 for iblock = 1:block_num
-    if iblock == 1
-        valid_tms_idx{iblock,1} = setdiff((ixd_tms_pre_start:ixd_tms_pre_stop),tms_idx_bad);
-    else
-        valid_tms_idx{iblock,1} = setdiff((ixd_tms_pst_start(iblock-1):ixd_tms_pst_stop(iblock-1)),tms_idx_bad);
-    end
+    valid_tms_idx{iblock,1} = setdiff((sub_info.TMS_triggers.start(iblock):sub_info.TMS_triggers.stop(iblock)),tms_idx_bad)';
 end
 
 % check the number of TMS trigger per block and their latencies
 for iblock = 1:block_num
-    num_TMS_BLK(iblock,1) = size(valid_tms_idx{iblock,1},2);
-    if num_TMS_BLK(iblock,1) > trial_num
+    num_TMS_BLK(iblock,1) = size(valid_tms_idx{iblock,1},1);
+    exclud_laps = [];
+    if num_TMS_BLK(iblock,1) > trial_num(iblock,1)
         % check the timelaps between successive triggers
-        ilat = 1;
-        for itrig = 1:num_TMS_BLK1 %size(header.events,2)
-            if strcmp(header.events(ixd_tms_pre_start+itrig-1).code,'1')
-                temp_trig_lat(ilat,1) = header.events(ixd_tms_pre_stop+itrig-1).latency;
-                ilat = ilat+1;
-            else
-            end
+        for itrig = 1:num_TMS_BLK(iblock,1)
+            temp_trig_lat(itrig,1) = header.events(sub_info.TMS_triggers.start(iblock)+itrig).latency;
         end
-        timelaps_BLK1 = diff(temp_trig_lat);
-        exclud_laps = [];
-        for ilaps = 1:length(timelaps_BLK1)
-            if timelaps_BLK1(ilaps) < 5.5
+        timelaps_BLK{iblock,1} = diff(temp_trig_lat);
+        for ilaps = 1:size(timelaps_BLK{iblock,1},1)
+            if timelaps_BLK{iblock,1}(ilaps) < 12
                 exclud_laps = [exclud_laps ilaps];
             else
             end
         end
     else
     end
-    exclud_laps = [exclud_laps exclud_laps+1];
-
-
+    exclud_laps_BLK{iblock,1} = exclud_laps;
+    for i_excl = 2:2:size(exclud_laps_BLK{iblock,1},2)
+        valid_tms_idx{iblock,1}(exclud_laps_BLK{iblock,1}(i_excl)) = [];
+    end
 end
 
 % save valid epochs in separate lw files for each block
@@ -228,11 +262,18 @@ end
 % read the .csv file to get the events codes for BLK 1 to 5
 for iblock = 1:block_num
     temp = readtable(fullfile(gen_subject_folder,txt_files(idx(iblock)).name));
+    for i_bad = 1:size(blk_idx,1)
+        if iblock == blk_idx(i_bad)
+            idx_temp = tms_idx_bad - sub_info.TMS_triggers.start(iblock) +1;
+            temp(idx_temp,:) = [];
+        end
+    end
     for itrial = 1:size(temp,1)
         idx_base(itrial,1) = strfind(temp.TYPE(itrial),'BASE');
         idx_sensi(itrial,1) = strfind(temp.TYPE(itrial),'WASPsensi');
         idx_ctrl(itrial,1) = strfind(temp.TYPE(itrial),'WASPcontrol');
     end
+
 
     % rename the events
     for itrial = 1:size(temp,1)
@@ -262,8 +303,7 @@ end
 bsln_time_window = [-0.1 -0.005];
 bsln_sample_window = [1 round((abs(bsln_time_window(1))-abs(bsln_time_window(2)))*sr+1)];
 
-% First check: for baseline single trial EMG activity (RMS) per block
-% threshold is mean(RMS) + 2.5*std(RMS)
+% First check: for baseline single trial EMG activity (RMS) per block: threshold is mean(RMS) + 2.5*std(RMS)
 % (as in Sulcova D. et al. bioRxiv 2022; Grandjean and Duque NIMG 2020)
 
 % prepare x values for plotting
@@ -301,6 +341,7 @@ for iblock = 1:block_num
             else
                 idx_exclud{iblock,iloop}(idx_exc,1) = itrial;
                 idx_exc = idx_exc+1;
+
                 % plot discarded trial
                 f = figure('Color','w','Position',[0 0 1500 700]);
                 figure(f);
@@ -334,14 +375,6 @@ for iblock = 1:block_num
     end
 end
 
-% % store indices of discarded trials
-% all_exclud = cell(block_num,1);
-% for iblock = 1:block_num
-%     for icleaning = 1:iloop
-%         all_exclud{iblock,1} = [all_exclud{iblock,1}; idx_exclud{iblock,icleaning}];
-%     end
-% end
-
 % Second check: threshold on baseline RMS exceeding +/-20 µV (rather than 15 µV due to line noise) 
 % (as in Sulcova et al. BioRxiv 2022; Morozova et al. Sci Reports 2024)
 idx_exclud{1,size(idx_exclud,2)+1} = [];
@@ -360,6 +393,7 @@ for iblock = 1:block_num
         end
     end
 end
+
 % Warning: display the number of MEP excluded for each block
 disp(' ')
 disp(['Threshold for baseline at ',num2str(abs_thrshld),' µV'])
@@ -374,26 +408,31 @@ end
 
 % plot the discarded trials
 for iblock = 1:block_num
-    for itrial = 1:size(idx_exclud{iblock,end},1)
-        f = figure('Color','w','Position',[0 0 1500 700]);
-        figure(f);
 
-        temp_plot_data{iblock,1} = squeeze(block_data{iblock,1});
-        plot(xval,temp_plot_data{iblock,1}(idx_exclud{iblock,end}(itrial,1),:),'k','LineWidth',1)
-        
-        xline(0,'--r','TMS','LabelOrientation','horizontal')
-        yline(0,'-k')
-        yline(bsln_rms{iblock,1}(idx_exclud{iblock,end}(itrial,1),1),'--k','RMS','LabelOrientation','horizontal','LabelVerticalAlignment','top','LabelHorizontalAlignment','left')
-        yline(abs_thrshld,'--m','absolute threshold','LabelOrientation','horizontal','LabelVerticalAlignment','bottom','LabelHorizontalAlignment','right')
-        ax = gca;
-        ax.TickDir = 'out';
-        ax.XLabel.String = 'time (s)';
-        ax.YLabel.String = 'amplitude (µV)';
-        ax.YLim = [-200 200];
-        ax.Box = 'off';
-        title({'Second check RMS threshold'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,end}(itrial,1)),' in block ',num2str(iblock)])})
-        pause()
-        close(f)
+    if size(idx_exclud{iblock,end},1) > 10
+        disp('no plotting, more than 10 trials discarded...')
+    else
+        for itrial = 1:size(idx_exclud{iblock,end},1)
+            f = figure('Color','w','Position',[0 0 1500 700]);
+            figure(f);
+
+            temp_plot_data{iblock,1} = squeeze(block_data{iblock,1});
+            plot(xval,temp_plot_data{iblock,1}(idx_exclud{iblock,end}(itrial,1),:),'k','LineWidth',1)
+
+            xline(0,'--r','TMS','LabelOrientation','horizontal')
+            yline(0,'-k')
+            yline(bsln_rms{iblock,1}(idx_exclud{iblock,end}(itrial,1),1),'--k','RMS','LabelOrientation','horizontal','LabelVerticalAlignment','top','LabelHorizontalAlignment','left')
+            yline(abs_thrshld,'--m','absolute threshold','LabelOrientation','horizontal','LabelVerticalAlignment','bottom','LabelHorizontalAlignment','right')
+            ax = gca;
+            ax.TickDir = 'out';
+            ax.XLabel.String = 'time (s)';
+            ax.YLabel.String = 'amplitude (µV)';
+            ax.YLim = [-200 200];
+            ax.Box = 'off';
+            title({'Second check RMS threshold'},{strcat(['sub-',subject_id,' MEP#',num2str(idx_exclud{iblock,end}(itrial,1)),' in block ',num2str(iblock)])})
+            pause()
+            close(f)
+        end
     end
 end
 
@@ -422,13 +461,28 @@ end
 
 
 %% 6) Split the valid MEP trials in separate files per event types
-
+i_dataset = 1;
 for iblock = 1:block_num
     out_datasets = RLW_segmentation2(clean_header{iblock,1}, clean_data{iblock,1},event_labels,'x_start',xstart,'x_duration',xduration);
     for ilabel = 1:size(out_datasets,2)
         CLW_save(sub_pre_proc_folder,out_datasets(ilabel).header, out_datasets(ilabel).data);
+        if out_datasets(ilabel).header.datasize(1) < 5
+            disp(' ')
+            disp(strcat(['WARNING: LESS THAN 5 MEPs in: ',out_datasets(ilabel).header.name]))
+            % store numbers of MEPS per datasets 
+        else
+        end
+        MEPs_num_per_condition(i_dataset) = out_datasets(ilabel).header.datasize(1);
+        i_dataset = i_dataset+1;
     end
     clear out_datasets
+end
+
+% check if the number of trial for each condition is sufficient (here if we
+% miss more than 3 datasets)
+if size(MEPs_num_per_condition,2) < 10
+    disp('NOT ENOUGH DATASETS DUE TO TOO MANY INVALID TRIALS -> STOP')
+    return
 end
 
 
@@ -441,12 +495,12 @@ list_sensi = dir(fullfile(sub_pre_proc_folder,'*sensi *.mat'));
 list_ctrl = dir(fullfile(sub_pre_proc_folder,'*ctrl *.mat'));
 
 % for base trials
-base_idx_bad = 1;
 base_bad_mep = cell(size(list_base,1),1);
 base_answ = cell(size(list_base,1),1);
 for ifile = 1:size(list_base,1)
     [base_header{ifile,1}, base_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_base(ifile).name));
     base_data{ifile,1} = squeeze(base_data{ifile,1});
+    base_idx_bad = 1;
     for itrial = 1:size(base_data{ifile,1},1)
         [base_max_p{ifile,itrial}, base_max_lat{ifile,itrial}] = max(base_data{ifile,1}(itrial,response_window(1):response_window(2)));
         [base_min_p{ifile,itrial}, base_min_lat{ifile,itrial}] = min(base_data{ifile,1}(itrial,response_window(1):response_window(2)));
@@ -457,21 +511,21 @@ for ifile = 1:size(list_base,1)
             disp(' ')
             disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_base(ifile).name]));
             disp(' ')
-            figure, plot(base_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(base_max_lat{ifile,itrial},base_max_p{ifile,itrial},'*r','MarkerSize',10)
+            figure('Position',[400 500 700 700]), plot(base_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(base_max_lat{ifile,itrial},base_max_p{ifile,itrial},'*r','MarkerSize',10)
             plot(base_min_lat{ifile,itrial},base_min_p{ifile,itrial},'*r','MarkerSize',10), title({strcat('trial#',num2str(itrial))},{list_base(ifile).name})
-            base_answ{ifile,1}(base_idx_bad,1) = questdlg('Discard this MEP?','P-2-P?','yes','no','yes');
+            base_answ{ifile,1}(base_idx_bad,1) = questdlg('Mark this suspicious MEP?','P-2-P?','y','n','y');
             base_idx_bad = base_idx_bad+1;
         else
         end
-    end
+   end
 end
 % for ctrl trials
-ctrl_idx_bad = 1;
 ctrl_bad_mep = cell(size(list_ctrl,1),1);
 ctrl_answ = cell(size(list_ctrl,1),1);
 for ifile = 1:size(list_ctrl,1)
     [ctrl_header{ifile,1}, ctrl_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_ctrl(ifile).name));
     ctrl_data{ifile,1} = squeeze(ctrl_data{ifile,1});
+    ctrl_idx_bad = 1;
     for itrial = 1:size(ctrl_data{ifile,1},1)
         [ctrl_max_p{ifile,itrial}, ctrl_max_lat{ifile,itrial}] = max(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2)));
         [ctrl_min_p{ifile,itrial}, ctrl_min_lat{ifile,itrial}] = min(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2)));
@@ -482,9 +536,9 @@ for ifile = 1:size(list_ctrl,1)
             disp(' ')
             disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_ctrl(ifile).name]));
             disp(' ')
-            figure, plot(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(ctrl_max_lat{ifile,itrial},ctrl_max_p{ifile,itrial},'*r','MarkerSize',10)
+            figure('Position',[400 500 700 700]), plot(ctrl_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(ctrl_max_lat{ifile,itrial},ctrl_max_p{ifile,itrial},'*r','MarkerSize',10)
             plot(ctrl_min_lat{ifile,itrial},ctrl_min_p{ifile,itrial},'*r','MarkerSize',10), title({strcat('trial#',num2str(itrial))},{list_ctrl(ifile).name})
-            ctrl_answ{ifile,1}(ctrl_idx_bad,1) = questdlg('Discard this MEP?','P-2-P?','yes','no','yes');
+            ctrl_answ{ifile,1}(ctrl_idx_bad,1) = questdlg('Mark this suspicious MEP?','P-2-P?','y','n','y');
             ctrl_idx_bad = ctrl_idx_bad+1;
         else
         end
@@ -492,12 +546,12 @@ for ifile = 1:size(list_ctrl,1)
 end
 
 % for sensi trials
-sensi_idx_bad = 1;
 sensi_bad_mep = cell(size(list_sensi,1),1);
 sensi_answ = cell(size(list_sensi,1),1);
 for ifile = 1:size(list_sensi,1)
     [sensi_header{ifile,1}, sensi_data{ifile,1}] = CLW_load(fullfile(sub_pre_proc_folder,list_sensi(ifile).name));
     sensi_data{ifile,1} = squeeze(sensi_data{ifile,1});
+    sensi_idx_bad = 1;
     for itrial = 1:size(sensi_data{ifile,1},1)
         [sensi_max_p{ifile,itrial}, sensi_max_lat{ifile,itrial}] = max(sensi_data{ifile,1}(itrial,response_window(1):response_window(2)));
         [sensi_min_p{ifile,itrial}, sensi_min_lat{ifile,itrial}] = min(sensi_data{ifile,1}(itrial,response_window(1):response_window(2)));
@@ -508,9 +562,9 @@ for ifile = 1:size(list_sensi,1)
             disp(' ')
             disp(strcat(['Time interval between peak is too long check trial#',num2str(itrial),' in: ',list_sensi(ifile).name]));
             disp(' ')
-            figure, plot(sensi_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(sensi_max_lat{ifile,itrial},sensi_max_p{ifile,itrial},'*r','MarkerSize',10)
+            figure('Position',[400 500 700 700]), plot(sensi_data{ifile,1}(itrial,response_window(1):response_window(2))), hold on, plot(sensi_max_lat{ifile,itrial},sensi_max_p{ifile,itrial},'*r','MarkerSize',10)
             plot(sensi_min_lat{ifile,itrial},sensi_min_p{ifile,itrial},'*r','MarkerSize',10), title({strcat('trial#',num2str(itrial))},{list_sensi(ifile).name})
-            sensi_answ{ifile,1}(sensi_idx_bad,1) = questdlg('Discard this MEP?','P-2-P?','y','n','y');
+            sensi_answ{ifile,1}(sensi_idx_bad,1) = questdlg('Mark this suspicious MEP??','P-2-P?','y','n','y');
             sensi_idx_bad = sensi_idx_bad+1;
         else
         end
@@ -526,20 +580,28 @@ MEP.sub_info = sub_info;
 for ifile = 1:size(list_base,1)
     if contains(list_base(ifile).name,'BLK1')
         for itrial = 1:size(base_data{ifile,1},1)
+            MEP.base.pos_peak_PRE{ifile,1}(itrial,1) = base_max_p{ifile,itrial}; 
+            MEP.base.neg_peak_PRE{ifile,1}(itrial,1) = base_min_p{ifile,itrial};
             MEP.base.amp_PRE{ifile,1}(itrial,1) = (abs(base_max_p{ifile,itrial}) + abs(base_min_p{ifile,itrial}));
             if base_max_lat{ifile,itrial} < base_min_lat{ifile,itrial}
                 MEP.base.lat_PRE{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
+                MEP.base.lat2_PRE{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
             else
                 MEP.base.lat_PRE{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
+                MEP.base.lat2_PRE{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
             end
         end
     else
         for itrial = 1:size(base_data{ifile,1},1)
+            MEP.base.pos_peak_PST{ifile,1}(itrial,1) = base_max_p{ifile,itrial};
+            MEP.base.neg_peak_PST{ifile,1}(itrial,1) = base_min_p{ifile,itrial};
             MEP.base.amp_PST{ifile,1}(itrial,1) = (abs(base_max_p{ifile,itrial}) + abs(base_min_p{ifile,itrial}));
             if base_max_lat{ifile,itrial} < base_min_lat{ifile,itrial}
                 MEP.base.lat_PST{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
+                MEP.base.lat2_PST{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
             else
                 MEP.base.lat_PST{ifile,1}(itrial,1) = (base_min_lat{ifile,itrial}+10)/sr;
+                MEP.base.lat2_PST{ifile,1}(itrial,1) = (base_max_lat{ifile,itrial}+10)/sr;
             end
         end
     end
@@ -548,11 +610,15 @@ end
 % for control trials
 for ifile = 1:size(list_ctrl,1)
     for itrial = 1:size(ctrl_data{ifile,1},1)
+        MEP.ctrl.pos_peak_PST{ifile,1}(itrial,1) = ctrl_max_p{ifile,itrial};
+        MEP.ctrl.neg_peak_PST{ifile,1}(itrial,1) = ctrl_min_p{ifile,itrial};
         MEP.ctrl.amp_PST{ifile,1}(itrial,1) = (abs(ctrl_max_p{ifile,itrial}) + abs(ctrl_min_p{ifile,itrial}));
         if ctrl_max_lat{ifile,itrial} < ctrl_min_lat{ifile,itrial}
             MEP.ctrl.lat_PST{ifile,1}(itrial,1) = (ctrl_max_lat{ifile,itrial}+10)/sr;
+            MEP.ctrl.lat2_PST{ifile,1}(itrial,1) = (ctrl_min_lat{ifile,itrial}+10)/sr;
         else
             MEP.ctrl.lat_PST{ifile,1}(itrial,1) = (ctrl_min_lat{ifile,itrial}+10)/sr;
+            MEP.ctrl.lat2_PST{ifile,1}(itrial,1) = (ctrl_max_lat{ifile,itrial}+10)/sr;
         end
     end
 end
@@ -560,44 +626,26 @@ end
 % for sensisitized trials
 for ifile = 1:size(list_sensi,1)
     for itrial = 1:size(sensi_data{ifile,1},1)
+        MEP.sensi.pos_peak_PST{ifile,1}(itrial,1) = sensi_max_p{ifile,itrial};
+        MEP.sensi.neg_peak_PST{ifile,1}(itrial,1) = sensi_min_p{ifile,itrial};
         MEP.sensi.amp_PST{ifile,1}(itrial,1) = (abs(sensi_max_p{ifile,itrial}) + abs(sensi_min_p{ifile,itrial}));
         if sensi_max_lat{ifile,itrial} < sensi_min_lat{ifile,itrial}
             MEP.sensi.lat_PST{ifile,1}(itrial,1) = (sensi_max_lat{ifile,itrial}+10)/sr;
+            MEP.sensi.lat2_PST{ifile,1}(itrial,1) = (sensi_min_lat{ifile,itrial}+10)/sr;
         else
             MEP.sensi.lat_PST{ifile,1}(itrial,1) = (sensi_min_lat{ifile,itrial}+10)/sr;
+            MEP.sensi.lat2_PST{ifile,1}(itrial,1) = (sensi_max_lat{ifile,itrial}+10)/sr;
         end
     end
 end
 
-
 % update and save number of discarded MEPs
-for ifile = 1:size(base_answ,1)
-    if ~isempty(base_answ{ifile,1})
-        MEP.base.exclud_P2P = base_answ{ifile,1};
-    else
-        MEP.base.exclud_P2P = [];
-    end
-end
-for ifile = 1:size(ctrl_answ,1)
-    if ~isempty(ctrl_answ{ifile,1})
-        MEP.ctrl.exclud_P2P = ctrl_answ{ifile,1};
-    else
-        MEP.ctrl.exclud_P2P = [];
-    end
-end
-for ifile = 1:size(sensi_answ,1)
-    if ~isempty(sensi_answ{ifile,1})
-        MEP.sensi.exclud_P2P = sensi_answ{ifile,1};
-    else
-        MEP.sensi.exclud_P2P = [];
-    end
-end
 MEP.excludedPerBlock = total_exclud;
 
 % save indices of suspicious MEPs
-MEP.base.Idx_exclud_P2P = base_bad_mep;
-MEP.ctrl.Idx_exclud_P2P = ctrl_bad_mep;
-MEP.sensi.Idx_exclud_P2P = sensi_bad_mep;
+MEP.base.Idx_suspicious_P2P = base_bad_mep;
+MEP.ctrl.Idx_suspicious_P2P = ctrl_bad_mep;
+MEP.sensi.Idx_suspicious_P2P = sensi_bad_mep;
 
 save(fullfile(sub_results_folder,strcat(savename,'_meps')),'MEP')
 
@@ -608,40 +656,21 @@ temp_base_PRE = [];
 temp_base_PST = [];
 for ifile = 1:size(list_base,1)
     if contains(list_base(ifile).name,'BLK1')
-        if ~isempty(base_answ{ifile,1})
-            MEP.base.amp_PRE{ifile,1}(base_bad_mep{ifile,1}) = [];
-        else
-        end
         temp_base_PRE = MEP.base.amp_PRE{ifile,1};
     else
-        if ~isempty(base_answ{ifile,1})
-            MEP.base.amp_PST{ifile,1}(base_bad_mep{ifile,1}) = [];
-        else
-        end
         temp_base_PST = [temp_base_PST;MEP.base.amp_PST{ifile,1}];
     end
 end
 
 temp_ctrl_PST = [];
 for ifile = 1:size(list_ctrl,1)
-    if ~isempty(ctrl_answ{ifile,1})
-        MEP.ctrl.amp_PST{ifile,1}(ctrl_bad_mep{ifile,1}) = [];
-    else
-    end
     temp_ctrl_PST = [temp_ctrl_PST;MEP.ctrl.amp_PST{ifile,1}];
 end
 
 temp_sensi_PST = [];
 for ifile = 1:size(list_sensi,1)
-    if ~isempty(sensi_answ{ifile,1})
-        MEP.sensi.amp_PST{ifile,1}(sensi_bad_mep{ifile,1}) = [];
-    else
-    end
     temp_sensi_PST = [temp_sensi_PST;MEP.sensi.amp_PST{ifile,1}];
 end
-
-% save MEP structure
-save(fullfile(sub_results_folder,strcat(savename,'_meps')),'MEP')
 
 
 %% 10) Export the MEPs amplitude data for the current subject per trial type in .csv files
